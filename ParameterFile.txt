@@ -3,4 +3,4 @@ K = 0.5
 T = 0.05
 USER_FORCE = 1.0
 RHO = 5
-NI = 100
+NI = 150
