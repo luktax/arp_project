@@ -162,14 +162,14 @@ int main(int argc, char *argv[]) {
 
             if (strncmp(m.data, "OBS_POS", 7)== 0){
                 sscanf(m.data, "OBS_POS= %d,%d", &dx, &dy);
-                printf("[D] Obstacle NEAR\n");
+                //printf("[D] Obstacle NEAR\n");
             }
-            if (strncmp(m.data, "ESC", 3)== 0){
+            else if (strncmp(m.data, "ESC", 3)== 0){
                 printf("[DRONE] EXIT\n");
                 break;
             }
         }
-        //repulsive Force x and y
+        //repulsive Force x and y from obstacles
         float dist = sqrt(dx*dx + dy*dy);
         float Frep_x = 0;
         float Frep_y = 0;
@@ -177,9 +177,29 @@ int main(int argc, char *argv[]) {
             Frep_x = params.NI * (1.0/dist - 1.0/params.RHO) * (dx / dist);
             Frep_y = params.NI * (1.0/dist - 1.0/params.RHO) * (dy / dist);
         }
+
+        //repulsive Force x and y from the walls
+        //wall left
+        dx = D.x;
+        if (dx < params.RHO){ Frep_x += params.NI * (1.0/dx - 1.0/params.RHO)*(dx/dx);}
+
+        //wall right
+        dx = abs(D.x - width);
+        if (dx < params.RHO) {Frep_x -= params.NI * (1.0/dx - 1.0/params.RHO)*(dx/dx);}
+
+        //wall top
+        dy = D.y;
+        if (dy < params.RHO) {Frep_y += params.NI * (1.0/dy - 1.0/params.RHO)*(dy/dy);}
+
+        //wall bottom
+        dy = abs(D.y- height);
+        if (dy < params.RHO) {Frep_y -= params.NI * (1.0/dy - 1.0/params.RHO)*(dy/dy);}
+
         //printf("Repulsive force: %f, %f", Frep_x, Frep_y);
+
         //viscous force x
         float Fvisc_x = params.K * D.vx;
+
         //resulting Force x
         float Fx_TOT = D.Fx * params.USER_FORCE - Fvisc_x + Frep_x;
         
