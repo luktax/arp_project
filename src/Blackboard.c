@@ -244,7 +244,7 @@ int main(int argc, char *argv[]) {
 
                     snprintf(msg_f.data, MSG_SIZE, "OBS_POS= %d,%d", dx, dy);
                     write(fd_out, &msg_f, sizeof(msg_f));
-                    printf("OBSTACLE NEAR\n");
+                    //printf("OBSTACLE NEAR\n");
                 }
             }
             

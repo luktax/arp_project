@@ -111,7 +111,7 @@ int main(int argc, char *argv[]) {
 
     while(1){
         struct params params;
-        load_params("ParameterFile.txt", &params);
+        load_params("config/ParameterFile.txt", &params);
 
         if (flag_reset){
             D.x = 5;
@@ -174,8 +174,8 @@ int main(int argc, char *argv[]) {
         float Frep_x = 0;
         float Frep_y = 0;
         if (dist < params.RHO && dist>0){
-            Frep_x = params.NI * (1.0/dist - 1.0/params.RHO) * (dx / dist);
-            Frep_y = params.NI * (1.0/dist - 1.0/params.RHO) * (dy / dist);
+            Frep_x = params.NI * (1.0/dist - 1.0/params.RHO) * (dx / dist)*5;
+            Frep_y = params.NI * (1.0/dist - 1.0/params.RHO) * (dy / dist)*5;
         }
 
         //repulsive Force x and y from the walls
