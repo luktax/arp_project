@@ -68,7 +68,7 @@ int main(){
         close(pipe_child_to_parent[IDX_B][0]);
 
         // argv[1]=read_fd, argv[2]=write_fd
-        execl("./Blackboard", "./Blackboard", fd_pc[IDX_B], fd_cp[IDX_B], NULL);
+        execl("./build/Blackboard", "./build/Blackboard", fd_pc[IDX_B], fd_cp[IDX_B], NULL);
         perror("execl blackboard");
         _exit(EXIT_FAILURE);
     }
@@ -89,7 +89,7 @@ int main(){
         close(pipe_parent_to_child[IDX_D][1]);
         close(pipe_child_to_parent[IDX_D][0]);
         // 
-        execl("./Drone", "./Drone", fd_pc[IDX_D], fd_cp[IDX_D], NULL);
+        execl("./build/Drone", "./build/Drone", fd_pc[IDX_D], fd_cp[IDX_D], NULL);
         perror("execl drone");
         exit(EXIT_FAILURE);
     }
@@ -110,7 +110,7 @@ int main(){
         close(pipe_child_to_parent[IDX_I][0]); // non legge da child->parent
 
         //
-        execlp("konsole", "konsole", "--geometry", "300x600", "-e", "./I_Keyboard",
+        execlp("konsole", "konsole", "--geometry", "300x600", "-e", "./build/I_Keyboard",
             fd_pc[IDX_I], fd_cp[IDX_I], NULL);
         perror("execl keyboard");
         _exit(EXIT_FAILURE);
@@ -132,7 +132,7 @@ int main(){
         close(pipe_child_to_parent[IDX_M][0]); // child non legge da c->p
         //close(pipe_child_to_parent[IDX_M][1]); // child non scrive al padre
 
-        execlp("konsole", "konsole", "--geometry", "1400x600", "-e", "./map", fd_pc[IDX_M], fd_cp[IDX_M], NULL);
+        execlp("konsole", "konsole", "--geometry", "1400x600", "-e", "./build/map", fd_pc[IDX_M], fd_cp[IDX_M], NULL);
         perror("execl konsole map");
         _exit(EXIT_FAILURE);
     }
@@ -152,7 +152,7 @@ int main(){
 
         close(pipe_parent_to_child[IDX_O][1]);
         close(pipe_child_to_parent[IDX_O][0]);
-        execl("./Obstacles", "./Obstacles", fd_pc[IDX_O], fd_cp[IDX_O], NULL);
+        execl("./build/Obstacles", "./build/Obstacles", fd_pc[IDX_O], fd_cp[IDX_O], NULL);
         perror("execl obstacle");
         exit(EXIT_FAILURE);
     }
@@ -172,7 +172,7 @@ int main(){
 
         close(pipe_parent_to_child[IDX_T][1]);
         close(pipe_child_to_parent[IDX_T][0]);
-        execl("./Targets", "./Targets", fd_pc[IDX_T], fd_cp[IDX_T], NULL);
+        execl("./build/Targets", "./build/Targets", fd_pc[IDX_T], fd_cp[IDX_T], NULL);
         perror("execl targets");
         exit(EXIT_FAILURE);
     }

@@ -1,0 +1,48 @@
+cmake_minimum_required(VERSION 3.10)
+project(ARP_PROJECT C)
+
+# Attiva include/
+include_directories(include)
+
+# Output directory
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
+# ------------------------------------------------------------------------------------
+# Drone (usa -lm)
+# ------------------------------------------------------------------------------------
+add_executable(Drone src/Drone.c)
+target_link_libraries(Drone m)
+
+# ------------------------------------------------------------------------------------
+# main 
+# ------------------------------------------------------------------------------------
+add_executable(main src/main.c)
+
+# ------------------------------------------------------------------------------------
+# Blackboard ( -lm)
+# ------------------------------------------------------------------------------------
+add_executable(Blackboard src/Blackboard.c)
+target_link_libraries(Blackboard m)
+
+# ------------------------------------------------------------------------------------
+# map ( -lncursesw)
+# ------------------------------------------------------------------------------------
+add_executable(map src/map.c)
+target_compile_options(map PRIVATE -Wall -Wextra)
+target_link_libraries(map ncursesw)
+
+# ------------------------------------------------------------------------------------
+# Obstacles 
+# ------------------------------------------------------------------------------------
+add_executable(Obstacles src/Obstacles.c)
+
+# ------------------------------------------------------------------------------------
+# Targets 
+# ------------------------------------------------------------------------------------
+add_executable(Targets src/Targets.c)
+
+# ------------------------------------------------------------------------------------
+# I_Keyboard (-lncurses)
+# ------------------------------------------------------------------------------------
+add_executable(I_Keyboard src/I_Keyboard.c)
+target_link_libraries(I_Keyboard ncurses)
