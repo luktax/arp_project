@@ -40,7 +40,7 @@ int main(){
         }
     }
 
-    
+    unlink("processes.log");
     pid_t pid_B, pid_D, pid_I, pid_M, pid_O, pid_T;
 
     char fd_pc[NUM_PROCESSES][16];
