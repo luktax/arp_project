@@ -94,8 +94,8 @@ void register_process(const char *name){
 int main(int argc, char *argv[]) {
 
     //write on the processes.log
-    register_process("Blackboard");
-    
+    register_process("Keyboard");
+
     if (argc < 3) {
         fprintf(stderr, "Usage: %s <fd>\n", argv[0]);
         return 1;
