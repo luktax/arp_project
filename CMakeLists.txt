@@ -46,3 +46,8 @@ add_executable(Targets src/Targets.c)
 # ------------------------------------------------------------------------------------
 add_executable(I_Keyboard src/I_Keyboard.c)
 target_link_libraries(I_Keyboard ncurses)
+
+# ------------------------------------------------------------------------------------
+# Watchdog ()
+# ------------------------------------------------------------------------------------
+add_executable(Watchdog src/Watchdog.c)

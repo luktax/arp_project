@@ -8,10 +8,10 @@
 #include <errno.h>
 #include <signal.h>
 
-#define NUM_PROCESSES 6
+#define NUM_PROCESSES 7
 #define MSG_SIZE 64
 
-enum { IDX_B = 0, IDX_D, IDX_I, IDX_M, IDX_O, IDX_T};
+enum { IDX_B = 0, IDX_D, IDX_I, IDX_M, IDX_O, IDX_T, IDX_W};
 
 struct msg {
     int src;
@@ -41,7 +41,7 @@ int main(){
     }
 
     unlink("processes.log");
-    pid_t pid_B, pid_D, pid_I, pid_M, pid_O, pid_T;
+    pid_t pid_B, pid_D, pid_I, pid_M, pid_O, pid_T, pid_W;
 
     char fd_pc[NUM_PROCESSES][16];
     char fd_cp[NUM_PROCESSES][16];
@@ -173,6 +173,26 @@ int main(){
         close(pipe_parent_to_child[IDX_T][1]);
         close(pipe_child_to_parent[IDX_T][0]);
         execl("./build/Targets", "./build/Targets", fd_pc[IDX_T], fd_cp[IDX_T], NULL);
+        perror("execl targets");
+        exit(EXIT_FAILURE);
+    }
+
+    //TARGETS
+    pid_W = fork();
+    if (pid_W == 0) {
+        // 
+        for (int i = 0; i < NUM_PROCESSES; i++) {
+            if (i != IDX_W) {
+                close(pipe_parent_to_child[i][0]);
+                close(pipe_parent_to_child[i][1]);
+                close(pipe_child_to_parent[i][0]);
+                close(pipe_child_to_parent[i][1]);
+            }
+        }
+
+        close(pipe_parent_to_child[IDX_W][1]);
+        close(pipe_child_to_parent[IDX_W][0]);
+        execl("./build/Watchdog", "./build/Watchdog", fd_pc[IDX_W], fd_cp[IDX_W], NULL);
         perror("execl targets");
         exit(EXIT_FAILURE);
     }
