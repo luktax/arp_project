@@ -53,12 +53,17 @@ void draw_all(WINDOW *win, int obs_x[MAX_OBS], int obs_y[MAX_OBS], int num_obs, 
     wattroff(win, COLOR_PAIR(2));
 
     for (int i = 0; i < num_obs; i++){
+        wattron(win, COLOR_PAIR(2));
         mvwaddch(win, obs_y[i], obs_x[i], 'O');
         //mvwprintw(win, obs_y[i], obs_x[i], "%d,%d", obs_x[i], obs_y[i]);
+        wattroff(win, COLOR_PAIR(2));
     }
     for (int i = 0; i < num_tgs; i++){
+        wattron(win, COLOR_PAIR(4));
         mvwaddch(win, tgs_y[i], tgs_x[i], 'T');
         //mvwprintw(win, tgs_y[i], tgs_x[i], "%d,%d", tgs_x[i], tgs_y[i]);
+        wattroff(win, COLOR_PAIR(4));
+
     }
 
     //drone
@@ -93,6 +98,7 @@ int main(int argc, char *argv[]) {
     init_pair(1, COLOR_BLUE,  -1);            
     init_pair(2, COLOR_YELLOW, -1);           
     init_pair(3, COLOR_WHITE, -1);
+    init_pair(4, COLOR_GREEN, -1);
     
     int height, width;
     getmaxyx(stdscr, height, width);
