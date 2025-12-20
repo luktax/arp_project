@@ -35,8 +35,42 @@ struct drone{
     float vy; //velocity y
 };
 
+void register_process(const char *name){
+    int fd = open("processes.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd == -1){
+        perror("open process file");
+        return;
+    }
+    struct flock lock;
+    memset(&lock, 0, sizeof(lock));
 
+    lock.l_type = F_WRLCK;
+    lock.l_whence = SEEK_SET;
 
+    if (fcntl(fd, F_SETLKW, &lock) == -1){
+        perror("fcntl lock");
+        close(fd);
+        return;
+    }
+
+    char buffer[128];
+    int len = snprintf(buffer, sizeof(buffer), "%s PID=%d\n", name, getpid());
+
+    if (write(fd, buffer, len) == -1){
+        perror("write process file");
+    }
+
+    //flush
+    fsync(fd);
+
+    //unlock
+    lock.l_type = F_UNLCK;
+    if (fcntl(fd, F_SETLK, &lock) == -1){
+        perror("fcntl unlock");
+    }
+
+    close(fd);
+}
 
 int load_params(const char *filename, struct params *p){
     FILE *f = fopen(filename, "r");
@@ -69,6 +103,10 @@ int load_params(const char *filename, struct params *p){
 }
 
 int main(int argc, char *argv[]) {
+
+    //write on the processes.log
+    register_process("Drone");
+
     int x, y;
     if (argc < 3) {
         fprintf(stderr, "Usage: %s <fd>\n", argv[0]);
