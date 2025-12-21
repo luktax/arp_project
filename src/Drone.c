@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+#include <signal.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -10,7 +12,7 @@
 
 #define MSG_SIZE 64
 
-enum { IDX_B = 0, IDX_D, IDX_I, IDX_M, IDX_O, IDX_T};
+enum { IDX_B = 0, IDX_D, IDX_I, IDX_M, IDX_O, IDX_T, IDX_W};
 
 struct msg {
     int src;
@@ -126,6 +128,9 @@ int main(int argc, char *argv[]) {
 
     // fd_out: write to father
     int fd_out = atoi(argv[2]);
+
+    // watchdog pid to send signals
+    pid_t watchdog_pid = atoi(argv[3]);
 
     float X = D.x;
     float Y = D.y;
@@ -273,6 +278,13 @@ int main(int argc, char *argv[]) {
                 perror("write to router");
             }
         }
+        //signals the watchdog
+        union sigval val;
+        val.sival_int = 100;
+        
+        //printf("[D] signals: IM ALIVE\n");
+        sigqueue(watchdog_pid, SIGUSR1, val);
+
         usleep(params.T * 1e6);
     }
 

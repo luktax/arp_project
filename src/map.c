@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+#include <signal.h>
 #include <ncurses.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -10,7 +12,7 @@
 #define MSG_SIZE 64
 #define MAX_OBS 100
 
-enum { IDX_B = 0, IDX_D, IDX_I, IDX_M, IDX_O, IDX_T};
+enum { IDX_B = 0, IDX_D, IDX_I, IDX_M, IDX_O, IDX_T, IDX_W};
 
 
 
@@ -125,6 +127,8 @@ int main(int argc, char *argv[]) {
     }
     int fd_in = atoi(argv[1]);
     int fd_out = atoi(argv[2]);
+    // watchdog pid to send signals
+    pid_t watchdog_pid = atoi(argv[3]);
 
     setlocale(LC_ALL, "");
     initscr();
@@ -247,6 +251,13 @@ int main(int argc, char *argv[]) {
         if (ready_o && ready_t){
             draw_all(win_main, obs_x, obs_y, num_obs, tgs_x ,tgs_y, num_tgs, x, y);
         }
+
+        //signals the watchdog
+        union sigval val;
+        val.sival_int = 100;
+        
+        //printf("[M] signals: IM ALIVE\n");
+        sigqueue(watchdog_pid, SIGUSR1, val);
 
         usleep(50000);
 

@@ -52,6 +52,29 @@ int main(){
         sprintf(fd_cp[i], "%d", pipe_child_to_parent[i][1]); // scrittura
     }
 
+    //WATCHDOG
+    pid_W = fork();
+    if (pid_W == 0) {
+        // 
+        for (int i = 0; i < NUM_PROCESSES; i++) {
+            if (i != IDX_W) {
+                close(pipe_parent_to_child[i][0]);
+                close(pipe_parent_to_child[i][1]);
+                close(pipe_child_to_parent[i][0]);
+                close(pipe_child_to_parent[i][1]);
+            }
+        }
+
+        close(pipe_parent_to_child[IDX_W][1]);
+        close(pipe_child_to_parent[IDX_W][0]);
+        execl("./build/Watchdog", "./build/Watchdog", fd_pc[IDX_W], fd_cp[IDX_W], NULL);
+        perror("execl targets");
+        exit(EXIT_FAILURE);
+    }
+
+    char watchdog_pid[16];
+    sprintf(watchdog_pid, "%d", pid_W);
+
     //BLACKBOARD
     pid_B = fork();
     if (pid_B == 0) {
@@ -68,7 +91,7 @@ int main(){
         close(pipe_child_to_parent[IDX_B][0]);
 
         // argv[1]=read_fd, argv[2]=write_fd
-        execl("./build/Blackboard", "./build/Blackboard", fd_pc[IDX_B], fd_cp[IDX_B], NULL);
+        execl("./build/Blackboard", "./build/Blackboard", fd_pc[IDX_B], fd_cp[IDX_B], watchdog_pid, NULL);
         perror("execl blackboard");
         _exit(EXIT_FAILURE);
     }
@@ -89,7 +112,7 @@ int main(){
         close(pipe_parent_to_child[IDX_D][1]);
         close(pipe_child_to_parent[IDX_D][0]);
         // 
-        execl("./build/Drone", "./build/Drone", fd_pc[IDX_D], fd_cp[IDX_D], NULL);
+        execl("./build/Drone", "./build/Drone", fd_pc[IDX_D], fd_cp[IDX_D], watchdog_pid, NULL);
         perror("execl drone");
         exit(EXIT_FAILURE);
     }
@@ -111,7 +134,7 @@ int main(){
 
         //
         execlp("konsole", "konsole", "--geometry", "300x600", "-e", "./build/I_Keyboard",
-            fd_pc[IDX_I], fd_cp[IDX_I], NULL);
+            fd_pc[IDX_I], fd_cp[IDX_I], watchdog_pid, NULL);
         perror("execl keyboard");
         _exit(EXIT_FAILURE);
     }
@@ -132,7 +155,7 @@ int main(){
         close(pipe_child_to_parent[IDX_M][0]); // child non legge da c->p
         //close(pipe_child_to_parent[IDX_M][1]); // child non scrive al padre
 
-        execlp("konsole", "konsole", "--geometry", "1400x600", "-e", "./build/map", fd_pc[IDX_M], fd_cp[IDX_M], NULL);
+        execlp("konsole", "konsole", "--geometry", "1400x600", "-e", "./build/map", fd_pc[IDX_M], fd_cp[IDX_M], watchdog_pid, NULL);
         perror("execl konsole map");
         _exit(EXIT_FAILURE);
     }
@@ -152,7 +175,7 @@ int main(){
 
         close(pipe_parent_to_child[IDX_O][1]);
         close(pipe_child_to_parent[IDX_O][0]);
-        execl("./build/Obstacles", "./build/Obstacles", fd_pc[IDX_O], fd_cp[IDX_O], NULL);
+        execl("./build/Obstacles", "./build/Obstacles", fd_pc[IDX_O], fd_cp[IDX_O], watchdog_pid, NULL);
         perror("execl obstacle");
         exit(EXIT_FAILURE);
     }
@@ -172,31 +195,11 @@ int main(){
 
         close(pipe_parent_to_child[IDX_T][1]);
         close(pipe_child_to_parent[IDX_T][0]);
-        execl("./build/Targets", "./build/Targets", fd_pc[IDX_T], fd_cp[IDX_T], NULL);
+        execl("./build/Targets", "./build/Targets", fd_pc[IDX_T], fd_cp[IDX_T], watchdog_pid, NULL);
         perror("execl targets");
         exit(EXIT_FAILURE);
     }
 
-    //TARGETS
-    pid_W = fork();
-    if (pid_W == 0) {
-        // 
-        for (int i = 0; i < NUM_PROCESSES; i++) {
-            if (i != IDX_W) {
-                close(pipe_parent_to_child[i][0]);
-                close(pipe_parent_to_child[i][1]);
-                close(pipe_child_to_parent[i][0]);
-                close(pipe_child_to_parent[i][1]);
-            }
-        }
-
-        close(pipe_parent_to_child[IDX_W][1]);
-        close(pipe_child_to_parent[IDX_W][0]);
-        execl("./build/Watchdog", "./build/Watchdog", fd_pc[IDX_W], fd_cp[IDX_W], NULL);
-        perror("execl targets");
-        exit(EXIT_FAILURE);
-    }
-    
     // FATHER BLOCK
     for (int i = 0; i < NUM_PROCESSES; i++) {
         close(pipe_parent_to_child[i][0]);
