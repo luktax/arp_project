@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+#include <signal.h>
 #include <unistd.h> 
 #include <fcntl.h> 
 #include <stdio.h> 
@@ -8,7 +10,7 @@
 #include <fcntl.h>
 
 #define MSG_SIZE 64 
-enum { IDX_B = 0, IDX_D, IDX_I, IDX_M, IDX_O, IDX_T}; 
+enum { IDX_B = 0, IDX_D, IDX_I, IDX_M, IDX_O, IDX_T, IDX_W};
 
 struct msg { int src; char data[MSG_SIZE]; }; 
 
@@ -61,6 +63,9 @@ int main(int argc, char *argv[]) {
 
     int fd_in = atoi(argv[1]); 
     int fd_out = atoi(argv[2]);
+    // watchdog pid to send signals
+    pid_t watchdog_pid = atoi(argv[3]);
+
     fcntl(fd_in, F_SETFL, O_NONBLOCK);
 
     int W = 190, H = 30; 
@@ -119,6 +124,14 @@ int main(int argc, char *argv[]) {
         } else {
             reset_sent = 0;
         } 
+
+        //signals the watchdog
+        union sigval val;
+        val.sival_int = 100;
+        
+        //printf("[O] signals: IM ALIVE\n");
+        sigqueue(watchdog_pid, SIGUSR1, val);
+
         usleep(50000); 
     } 
 }

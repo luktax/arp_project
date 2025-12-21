@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+#include <signal.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -34,7 +36,7 @@ struct blackboard {
     int running;
 };
 
-enum { IDX_B = 0, IDX_D, IDX_I, IDX_M, IDX_O, IDX_T};
+enum { IDX_B = 0, IDX_D, IDX_I, IDX_M, IDX_O, IDX_T, IDX_W};
 
 void register_process(const char *name){
     int fd = open("processes.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
@@ -106,6 +108,9 @@ int main(int argc, char *argv[]) {
     // fd_out: write to father
     int fd_out = atoi(argv[2]);
 
+    // watchdog pid to send signals
+    pid_t watchdog_pid = atoi(argv[3]);
+
     struct blackboard bb = {0, 0, {0}, {0}, 0, {0}, {0}, 0, 190, 30, 1};
     int expected_obs = (int)roundf(bb.H*bb.W/1000);
     int expected_tgs = (int)roundf(bb.H*bb.W/1000);
@@ -116,7 +121,9 @@ int main(int argc, char *argv[]) {
         FD_SET(fd_in, &fds);
         int max_fd = fd_in + 1;
 
-        int ready = select(max_fd, &fds, NULL, NULL, NULL);
+        struct timeval tv = {0, 50000};
+        int ready = select(max_fd, &fds, NULL, NULL, &tv);
+
         if (ready < 0) {
             if (errno == EINTR) continue; // interrupt handler
             perror("select");
@@ -291,6 +298,12 @@ int main(int argc, char *argv[]) {
             }
             
         }
+        //signal the watchdog
+        union sigval val;
+        val.sival_int = 100;
+        
+        //printf("[BB] signals: IM ALIVE\n");
+        sigqueue(watchdog_pid, SIGUSR1, val);
         usleep(50000); 
     }
     
