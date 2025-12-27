@@ -40,7 +40,8 @@ int main(){
         }
     }
 
-    unlink("processes.log");
+    unlink("log/watchdog.log");
+    unlink("log/processes.log");
     pid_t pid_B, pid_D, pid_I, pid_M, pid_O, pid_T, pid_W;
 
     char fd_pc[NUM_PROCESSES][16];
