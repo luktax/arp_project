@@ -80,7 +80,7 @@ void draw_all(WINDOW *win, int obs_x[MAX_OBS], int obs_y[MAX_OBS], int num_obs, 
 }
 
 void register_process(const char *name){
-    int fd = open("processes.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
+    int fd = open("log/processes.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (fd == -1){
         perror("open process file");
         return;

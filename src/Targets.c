@@ -15,7 +15,7 @@ enum { IDX_B = 0, IDX_D, IDX_I, IDX_M, IDX_O, IDX_T, IDX_W};
 struct msg { int src; char data[MSG_SIZE]; };
 
 void register_process(const char *name){
-    int fd = open("processes.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
+    int fd = open("log/processes.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (fd == -1){
         perror("open process file");
         return;

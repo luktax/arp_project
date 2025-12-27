@@ -24,7 +24,7 @@ process_status process_table[NUM_PROCESSES];
 static pid_t watchdog_pid;
 
 void register_process(const char *name){
-    int fd = open("processes.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
+    int fd = open("log/processes.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (fd == -1){
         perror("open process file");
         return;
@@ -66,12 +66,12 @@ void wait_for_all_processes(void) {
     while (lines < NUM_PROCESSES) {
         lines = 0;
 
-        FILE *f = fopen("processes.log", "r");
+        FILE *f = fopen("log/processes.log", "r");
         if (f) {
             char buf[256];
             while (fgets(buf, sizeof(buf), f))
                 lines++;
-                printf("[WD] lines=%d\n", lines);
+                //printf("[WD] lines=%d\n", lines);
             fclose(f);
         }
         usleep(100000); // 100ms
@@ -82,7 +82,7 @@ int load_process(){
     printf("[WD] loading processes...\n");
     //fflush(stdout);
 
-    FILE *f = fopen("processes.log", "r");
+    FILE *f = fopen("log/processes.log", "r");
     if (!f){
         perror("fopen processes.log");
         return 0;
@@ -135,6 +135,50 @@ void signal_handler(int sig, siginfo_t *info, void *context){
    update_process(pid, time);
 }
 
+void watchdog_log(){
+    int fd = open("log/watchdog.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd == -1) {
+        perror("open watchdog log");
+        return;
+    }
+
+    // lock the file
+    struct flock lock;
+    memset(&lock, 0, sizeof(lock));
+    lock.l_type = F_WRLCK;
+    lock.l_whence = SEEK_SET;
+    if (fcntl(fd, F_SETLKW, &lock) == -1) {
+        perror("fcntl lock");
+        close(fd);
+        return;
+    }
+
+    // current time
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+    char time_str[16];
+    strftime(time_str, sizeof(time_str), "%H:%M:%S", tm_info);
+
+    // Scrivi intestazione del ciclo
+    dprintf(fd, "%s WATCHDOG: check cycle\n", time_str);
+
+    // Scrivi lo stato di ogni processo
+    for (int i = 0; i < NUM_PROCESSES-1; i++) {
+        const char *status = process_table[i].alive ? "ALIVE" : "DEAD";
+        dprintf(fd, "%s %s PID=%d status=%s\n", time_str, process_table[i].name, process_table[i].pid, status);
+    }
+
+    // Flush
+    fsync(fd);
+
+    // Sblocca il file
+    lock.l_type = F_UNLCK;
+    if (fcntl(fd, F_SETLK, &lock) == -1) {
+        perror("fcntl unlock");
+    }
+
+    close(fd);
+}
 
 int main(int argc, char *argv[]) {
     watchdog_pid = getpid();
@@ -162,12 +206,13 @@ int main(int argc, char *argv[]) {
     sigemptyset(&sa.sa_mask);
     sigaction(SIGUSR1, &sa, NULL);
 
-    // 6. Sblocca SIGUSR1 (i segnali pendenti arrivano ora)
+    // 6. activate SIGUSR1
     sigprocmask(SIG_SETMASK, &old_set, NULL);
 
-    while (1) {
-        sleep(1);
+    struct timespec last_log_time;
+    clock_gettime(CLOCK_MONOTONIC, &last_log_time);
 
+    while (1) {
         time_t now = time(NULL);
 
         for (int i = 0; i < NUM_PROCESSES; i++){
@@ -181,8 +226,20 @@ int main(int argc, char *argv[]) {
                 process_table[i].alive = 1;
             }
         }
-    }
+        
+        // --- Log massimo 1 volta al secondo ---
+        struct timespec curr_time;
+        clock_gettime(CLOCK_MONOTONIC, &curr_time);
+        long diff_ms = (curr_time.tv_sec - last_log_time.tv_sec) * 1000 +
+                       (curr_time.tv_nsec - last_log_time.tv_nsec) / 1000000;
+        if (diff_ms >= 1000) {
+            watchdog_log();
+            last_log_time = curr_time;
+        }
 
+        // Piccola pausa per non saturare la CPU
+        usleep(50000); // 50ms
+    }
     return 0;
 }
 
