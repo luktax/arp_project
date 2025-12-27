@@ -9,6 +9,7 @@
 #include <string.h>
 #include <math.h>
 #include <fcntl.h>
+#include <time.h>
 
 
 #define MSG_SIZE 64
@@ -300,7 +301,7 @@ int main(int argc, char *argv[]) {
         }
         //signal the watchdog
         union sigval val;
-        val.sival_int = 100;
+        val.sival_int = time(NULL);
         
         //printf("[BB] signals: IM ALIVE\n");
         sigqueue(watchdog_pid, SIGUSR1, val);

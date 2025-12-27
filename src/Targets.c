@@ -129,7 +129,7 @@ int main(int argc, char *argv[]) {
 
         //signals the watchdog
         union sigval val;
-        val.sival_int = 100;
+        val.sival_int = time(NULL);
         
         //printf("[T] signals: IM ALIVE\n");
         sigqueue(watchdog_pid, SIGUSR1, val);

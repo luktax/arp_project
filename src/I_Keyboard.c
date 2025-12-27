@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include <string.h>
 #include <fcntl.h>
+#include <time.h>
 
 #define MSG_SIZE 64
 enum { IDX_B = 0, IDX_D, IDX_I, IDX_M, IDX_O, IDX_T, IDX_W};
@@ -162,7 +163,7 @@ int main(int argc, char *argv[]) {
 
         //signals the watchdog
         union sigval val;
-        val.sival_int = 100;
+        val.sival_int = time(NULL);
         
         //printf("[K] signals: IM ALIVE\n");
         sigqueue(watchdog_pid, SIGUSR1, val);

@@ -127,6 +127,9 @@ int main(int argc, char *argv[]) {
     }
     int fd_in = atoi(argv[1]);
     int fd_out = atoi(argv[2]);
+
+    int flags = fcntl(fd_in, F_GETFL, 0);
+    fcntl(fd_in, F_SETFL, flags | O_NONBLOCK);
     // watchdog pid to send signals
     pid_t watchdog_pid = atoi(argv[3]);
 
@@ -176,20 +179,21 @@ int main(int argc, char *argv[]) {
         int ch = getch();
         if (ch == KEY_RESIZE){
 
+            int c2;
+            do {
+                napms(50);
+                c2 = getch();
+            } while (c2 == KEY_RESIZE);
+
+            if (c2 != ERR) {
+                ungetch(c2);
+            }
+            
             clear();
             erase();
             refresh();
-
-            int still_resizing = 1;
-            napms(50);
-            int c2 = getch();
-            if (c2 == ERR) {
-                still_resizing = 0;
-            }
-            else if (c2 != KEY_RESIZE){
-                ungetch(c2);
-            }
             resize_term(0,0);
+
             getmaxyx(stdscr, height, width);
             
             //expected_obs = (int)(width * height) / 1000;
@@ -254,7 +258,7 @@ int main(int argc, char *argv[]) {
 
         //signals the watchdog
         union sigval val;
-        val.sival_int = 100;
+        val.sival_int = time(NULL);
         
         //printf("[M] signals: IM ALIVE\n");
         sigqueue(watchdog_pid, SIGUSR1, val);
