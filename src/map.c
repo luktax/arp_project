@@ -8,12 +8,15 @@
 #include <locale.h>
 #include <string.h>
 #include <math.h>
+#include <errno.h>
 
 #include "../include/process_log.h"
 #define PROCESS_NAME "MAP"
 #include "../include/common.h"
 
 #define MAX_OBS 100
+
+#define STATS_WIDTH 35
 
 void draw_window(WINDOW *win){
     int H, W;
@@ -22,7 +25,7 @@ void draw_window(WINDOW *win){
     int margin = 3;
 
     int wh = H - 2 * margin;
-    int ww = W - 2 * margin;
+    int ww = W - 2 * margin - STATS_WIDTH; // Reserve space for sidebar
     if (wh < 3) wh = 3;
     if (ww < 3) ww = 3;
     
@@ -77,6 +80,7 @@ int main(int argc, char *argv[]) {
 
     //write on the processes.log
     register_process("Map");
+    LOG("Map process started");
 
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <fd>\n", argv[0]);
@@ -116,6 +120,15 @@ int main(int argc, char *argv[]) {
     int y = 5;
 
     draw_window(win_main);
+    
+    // Stats window placement: Right side
+    int W_scr, H_scr;
+    getmaxyx(stdscr, H_scr, W_scr);
+    WINDOW *win_stats = newwin(H_scr - 6, STATS_WIDTH - 2, 3, W_scr - STATS_WIDTH); 
+    box(win_stats, 0, 0);
+    wrefresh(win_stats);
+
+    LOG("Map initialized");
 
     //obstacle
     int obs_x[MAX_OBS];
@@ -130,7 +143,9 @@ int main(int argc, char *argv[]) {
     int ready_o = 0;
     int ready_t = 0;
 
-    while(1){
+    int running = 1;
+
+    while(running){
         
         //resize
         int ch = getch();
@@ -150,6 +165,7 @@ int main(int argc, char *argv[]) {
             erase();
             refresh();
             resize_term(0,0);
+            LOG("Map resized");
 
             getmaxyx(stdscr, height, width);
             
@@ -161,28 +177,58 @@ int main(int argc, char *argv[]) {
             //msg to notice the bb of the resize
             struct msg mb;
             mb.src = IDX_M;
-            snprintf(mb.data, MSG_SIZE, "RESIZE %d %d", width-6, height-6);
+            // Send Game Area size (Width - StatsWidth - Margins)
+            snprintf(mb.data, MSG_SIZE, "RESIZE %d %d", width - STATS_WIDTH - 6, height - 6);
             write(fd_out, &mb, sizeof(mb));
 
             ready_o = 0;
             ready_t = 0;
 
             draw_window(win_main);
+            
+            // Redraw stats window at correct position
+            wresize(win_stats, height - 6, STATS_WIDTH - 2);
+            mvwin(win_stats, 3, width - STATS_WIDTH);
+            box(win_stats, 0, 0);
+            wrefresh(win_stats);
         }
 
         //read the message
-        struct msg m;
-        ssize_t n = read(fd_in, &m, sizeof(m));
-        
-        if (n > 0) {
+        while(1){
+            struct msg m;
+            ssize_t n = read(fd_in, &m, sizeof(m));
+            
+            if (n < 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    break; 
+                }
+                perror("read map");
+                break;
+            }
+            if (n == 0) break;
+
+            // STATS forwarded by Blackboard
+            if (m.src == IDX_B && strncmp(m.data, "STATS", 5) == 0){
+                float fx, fy, vx, vy, x, y;
+                sscanf(m.data, "STATS %f %f %f %f %f %f", &fx, &fy, &vx, &vy, &x, &y);
+                
+                werase(win_stats);
+                box(win_stats, 0, 0);
+                mvwprintw(win_stats, 1, 1, "DYNAMICS");
+                mvwprintw(win_stats, 2, 1, "Pos:   %.2f, %.2f", x, y);
+                mvwprintw(win_stats, 3, 1, "Vel:   %.2f, %.2f", vx, vy);
+                mvwprintw(win_stats, 4, 1, "Force: %.2f, %.2f", fx, fy);
+                wrefresh(win_stats);
+            }
             //if it is an obstacle
-            if (m.src == IDX_B && strncmp(m.data, "O=", 2) == 0){
+            else if (m.src == IDX_B && strncmp(m.data, "O=", 2) == 0){
                 int o_x, o_y;
                 sscanf(m.data, "O=%d,%d", &o_x, &o_y);
                 obs_x[num_obs] = o_x;
                 obs_y[num_obs] = o_y;
                 num_obs++;
                 //printf("[M] posizione ostacolo: %d,%d\n", o_x, o_y);
+
             }
             //if it is a target
             else if (m.src == IDX_B && strncmp(m.data, "T=", 2) == 0){
@@ -205,12 +251,16 @@ int main(int argc, char *argv[]) {
             }
             else if (strncmp(m.data, "ESC", 3)== 0){
                 printf("[MAP] EXIT\n");
+                LOG("Map received ESC, exiting");
+                running = 0;
                 break;
             }
-            
         }
+        
+        if (!running) break;
         if (ready_o && ready_t){
             draw_all(win_main, obs_x, obs_y, num_obs, tgs_x ,tgs_y, num_tgs, x, y);
+            LOG("Map redrawn");
         }
 
         //signals the watchdog
@@ -225,7 +275,9 @@ int main(int argc, char *argv[]) {
     }
 
     delwin(win_main);
+    delwin(win_stats);
     endwin();
     close(fd_in);
+    LOG("Map terminated");
     return 0;
 }

@@ -18,6 +18,7 @@ int main(int argc, char *argv[]) {
 
     //write on the processes.log
     register_process("Obstacles");
+    LOG("Process started");
 
     if (argc < 3) { 
         fprintf(stderr, "Usage: %s <fd>\n", argv[0]); 
@@ -31,7 +32,7 @@ int main(int argc, char *argv[]) {
 
     fcntl(fd_in, F_SETFL, O_NONBLOCK);
 
-    int W = 190, H = 30; 
+    int W = 155, H = 30; 
 
     srand(time(NULL)^ getpid()); 
 
@@ -65,6 +66,7 @@ int main(int argc, char *argv[]) {
             }
             if (strncmp(m.data, "ESC", 3)== 0){
                 printf("[OBSTACLES] EXIT\n");
+                LOG("Obstacles received ESC, exiting");
                 break;
             }
         }
@@ -77,6 +79,7 @@ int main(int argc, char *argv[]) {
                 write(fd_out, &bb_msg, sizeof(bb_msg)); 
                 reset_sent = 1;
                 printf("[O] RESET INVIATO\n");
+                LOG("Window change detected, regenerating obstacles...");
             }
             
             int x = (rand() % (W-2)) + 1;
@@ -97,4 +100,8 @@ int main(int argc, char *argv[]) {
 
         usleep(50000); 
     } 
+    close(fd_in);
+    close(fd_out);
+    LOG("Obstacles terminated");
+    return 0;
 }

@@ -71,6 +71,7 @@ int main(int argc, char *argv[]) {
 
     //write on the processes.log
     register_process("Drone");
+    LOG("process initialized");
 
     int x, y;
     if (argc < 3) {
@@ -100,9 +101,10 @@ int main(int argc, char *argv[]) {
 
     //map
     int height = 30;
-    int width = 190;
+    int width = 155;
 
     int flag_reset = 0;
+    int running = 1;
 
     int flags = fcntl(fd_in, F_GETFL, 0);
     fcntl(fd_in, F_SETFL, flags | O_NONBLOCK);
@@ -115,7 +117,7 @@ int main(int argc, char *argv[]) {
         perror("write to router");
     }
 
-    while(1){
+    while(running){
         struct params params;
         load_params("config/ParameterFile.txt", &params);
 
@@ -140,15 +142,27 @@ int main(int argc, char *argv[]) {
         int dx = 0;
         int dy = 0;
 
-        struct msg m;
-        ssize_t n = read(fd_in, &m, sizeof(m));
-        //printf("[BB->D] Ricevuto codice: %d\n", ch);
+        while (1) {
+            struct msg m;
+            ssize_t n = read(fd_in, &m, sizeof(m));
+            if (n < 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    break; // No more messages in pipe
+                }
+                perror("read drone");
+                break;
+            }
+            if (n == 0) break; // EOF
 
-        if (n > 0) {
             int ch = (m.data[0]);
             if (strncmp(m.data, "RESIZE", 6)== 0){
                 ch = 'r';
                 sscanf(m.data, "RESIZE %d %d", &width, &height);
+                {
+                    char log_msg[64];
+                    snprintf(log_msg, sizeof(log_msg), "Window resized to %dx%d", width, height);
+                    LOG(log_msg);
+                }
             }
             // Movimento
             if (ch == 'w') D.Fy--;
@@ -160,21 +174,31 @@ int main(int argc, char *argv[]) {
             else if (ch == 'q') { D.Fx--; D.Fy--; }
             else if (ch == 'z') { D.Fx--; D.Fy++; }
             else if (ch == 's') { D.Fx = 0; D.Fy = 0; }
-            else if (ch == 'r') { flag_reset = 1; printf("RESET\n");
+            else if (ch == 'r') { 
+                flag_reset = 1; 
+                printf("RESET\n");
+                LOG("Reset command received");
             } //reset
             else if (ch == 27) {
                 printf("[DRONE] EXIT\n");
-                break;} // ESC chiude tutto
+                LOG("Received ESC, shutting down");
+                running = 0; 
+                break;
+            } // ESC chiude tutto
 
             if (strncmp(m.data, "OBS_POS", 7)== 0){
                 sscanf(m.data, "OBS_POS= %d,%d", &dx, &dy);
+                LOG("Obstacle detected");
                 //printf("[D] Obstacle NEAR\n");
             }
             else if (strncmp(m.data, "ESC", 3)== 0){
                 printf("[DRONE] EXIT\n");
+                running = 0;
                 break;
             }
         }
+        
+        if (!running) break;
         //repulsive Force x and y from obstacles
         float dist = sqrt(dx*dx + dy*dy);
         float Frep_x = 0;
@@ -214,6 +238,12 @@ int main(int argc, char *argv[]) {
         //resulting Force y
         float Fy_TOT = D.Fy * params.USER_FORCE - Fvisc_y + Frep_y;
         
+        {
+            char log_msg[128];
+            snprintf(log_msg, sizeof(log_msg), "Dynamics updated: Fx=%.2f, Fy=%.2f", Fx_TOT, Fy_TOT);
+            LOG(log_msg);
+        }
+
         //x position
         float ax = Fx_TOT/params.M;
         D.vx = D.vx + ax * params.T;
@@ -223,6 +253,13 @@ int main(int argc, char *argv[]) {
         D.vy = D.vy + ay * params.T;
         Y = Y + D.vy * params.T;
         
+        // Send STATS to Blackboard for Diagnostics
+        {
+            struct msg stats_msg;
+            stats_msg.src = IDX_D;
+            snprintf(stats_msg.data, MSG_SIZE, "STATS %.2f %.2f %.2f %.2f %.2f %.2f", Fx_TOT, Fy_TOT, D.vx, D.vy, X, Y);
+            write(fd_out, &stats_msg, sizeof(stats_msg));
+        }
         //update the position
         D.x = (int)roundf(X);
         D.y = (int)roundf(Y);
@@ -240,6 +277,11 @@ int main(int argc, char *argv[]) {
             if (write(fd_out, &out_msg, sizeof(out_msg)) < 0) {
                 perror("write to router");
             }
+            {
+                char log_msg[64];
+                snprintf(log_msg, sizeof(log_msg), "Drone position sent: %d,%d", D.x, D.y);
+                LOG(log_msg);
+            }
         }
         //signals the watchdog
         union sigval val;
@@ -253,5 +295,6 @@ int main(int argc, char *argv[]) {
 
     close(fd_in);
     close(fd_out);
+    LOG("Drone terminated");
     return 0;
 }

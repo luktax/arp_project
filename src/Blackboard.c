@@ -39,6 +39,7 @@ int main(int argc, char *argv[]) {
     
     //write on the processes.log
     register_process("Blackboard");
+    LOG("Blackboard process started");
 
     int ni = 1.0;
     double d0 = 5.0;
@@ -71,7 +72,7 @@ int main(int argc, char *argv[]) {
     // watchdog pid to send signals
     pid_t watchdog_pid = atoi(argv[3]);
 
-    struct blackboard bb = {0, 0, {0}, {0}, 0, {0}, {0}, 0, 190, 30, 1};
+    struct blackboard bb = {0, 0, {0}, {0}, 0, {0}, {0}, 0, 155, 30, 1};
     int expected_obs = (int)roundf(bb.H*bb.W/1000);
     int expected_tgs = (int)roundf(bb.H*bb.W/1000);
 
@@ -107,6 +108,7 @@ int main(int argc, char *argv[]) {
                 // ESC 
                 if (m.data[0] == 27){
                     printf("[BB] EXIT\n");
+                    LOG("Received ESC from Keyboard, shutting down");
                     snprintf(m.data, MSG_SIZE, "ESC");
                     if(write(fd_out, &m, sizeof(m)) < 0){
                         perror("write to map via router");
@@ -116,14 +118,30 @@ int main(int argc, char *argv[]) {
             }
             //if it is from the drone
             else if(m.src == IDX_D){
-                sscanf(m.data, "%d,%d", &bb.drone_x, &bb.drone_y);
-                //printf("[D->BB] Ricevuto codice: %s\n", m.data);
+                // Check if it's a STATS message first
+                if (strncmp(m.data, "STATS", 5) == 0) {
+                     // Forward STATS to Map
+                    struct msg map_msg = m;
+                    map_msg.src = IDX_B; // Mark as coming from Blackboard forwarding
+                    if(write(fd_out, &map_msg, sizeof(map_msg)) < 0){
+                        perror("write to map forwarding stats");
+                    }
+                } else {
+                    // Assume it's a position update
+                    sscanf(m.data, "%d,%d", &bb.drone_x, &bb.drone_y);
+                    {
+                        char log_msg[64];
+                        snprintf(log_msg, sizeof(log_msg), "Received drone position: %d,%d", bb.drone_x, bb.drone_y);
+                        LOG(log_msg);
+                    } 
+                    //printf("[D->BB] Ricevuto codice: %s\n", m.data);
 
-                struct msg map_msg;
-                map_msg.src = IDX_B;
-                snprintf(map_msg.data, MSG_SIZE, "D=%d,%d", bb.drone_x,bb.drone_y); 
-                if(write(fd_out, &map_msg, sizeof(map_msg)) < 0){
-                    perror("write to map via router");
+                    struct msg map_msg;
+                    map_msg.src = IDX_B;
+                    snprintf(map_msg.data, MSG_SIZE, "D=%d,%d", bb.drone_x,bb.drone_y); 
+                    if(write(fd_out, &map_msg, sizeof(map_msg)) < 0){
+                        perror("write to map via router");
+                    }
                 }
             }
             //if it is from the map
@@ -131,6 +149,11 @@ int main(int argc, char *argv[]) {
                 
                 sscanf(m.data, "RESIZE %d %d", &bb.W, &bb.H);
                 //printf("[M->BB] RESIZE ricevuto %d, %d\n", bb.W, bb.H);
+                {
+                    char log_msg[64];
+                    snprintf(log_msg, sizeof(log_msg), "Forwarding RESIZE to Obstacles and Targets: %dx%d", bb.W, bb.H);
+                    LOG(log_msg);
+                }
                 
                 //printf("RESET");
                 
@@ -158,6 +181,11 @@ int main(int argc, char *argv[]) {
                     tmp_obs_x[tmp_num_obs] = x;
                     tmp_obs_y[tmp_num_obs] = y;
                     tmp_num_obs++;
+                    {
+                        char log_msg[64];
+                        snprintf(log_msg, sizeof(log_msg), "Received Obstacle at %d,%d", x, y);
+                        LOG(log_msg);
+                    }
                     //printf("[BB] obstacle position: %d,%d; n%d\n", x, y, tmp_num_obs);
                 }
 
@@ -170,6 +198,7 @@ int main(int argc, char *argv[]) {
 
                     snprintf(map_msg.data, MSG_SIZE, "STOP_O");
                     write(fd_out, &map_msg, sizeof(map_msg));
+                    LOG("sent STOP_O");
                     //printf("[BB->O] STOP INVIATO\n");
 
                     for(int i=0; i<tmp_num_obs; i++) {
@@ -184,6 +213,7 @@ int main(int argc, char *argv[]) {
                     //printf("[BB] obs = %d\n", expected_obs);  
                     snprintf(map_msg.data, MSG_SIZE, "REDRAW_O"); 
                     write(fd_out, &map_msg, sizeof(map_msg)); 
+                    LOG("Forwarding REDRAW_O to Map");
                     //printf("[BB] REDRAW_O\n"); 
                 } 
             }
@@ -206,6 +236,11 @@ int main(int argc, char *argv[]) {
                     tmp_tgs_y[tmp_num_tgs] = y;
                     tmp_num_tgs++;
 
+                    {
+                        char log_msg[64];
+                        snprintf(log_msg, sizeof(log_msg), "Received Target at %d,%d", x, y);
+                        LOG(log_msg);
+                    }
                     //printf("[BB] target position: %d,%d; n%d\n", x, y, tmp_num_tgs);
                 }
 
@@ -220,7 +255,7 @@ int main(int argc, char *argv[]) {
                     // Blocca il generatore di targets
                     snprintf(map_msg.data, MSG_SIZE, "STOP_T");
                     write(fd_out, &map_msg, sizeof(map_msg));
-
+                    LOG("sent STOP_T");
                     //printf("[BB->T] STOP INVIATO\n");
 
                     // Salvo target nella BB e li mando alla mappa
@@ -233,11 +268,12 @@ int main(int argc, char *argv[]) {
                         snprintf(map_msg.data, MSG_SIZE, "T=%d,%d",
                                 bb.tgs_x[i], bb.tgs_y[i]);
                         write(fd_out, &map_msg, sizeof(map_msg));
-                    }
+                                            }
 
                     // Richiedi ridisegno target
                     snprintf(map_msg.data, MSG_SIZE, "REDRAW_T");
                     write(fd_out, &map_msg, sizeof(map_msg));
+                    LOG("Forwarding REDRAW_T to Map");
                     //printf("[BB] REDRAW_T\n");
                 }
             }
@@ -253,6 +289,7 @@ int main(int argc, char *argv[]) {
 
                     snprintf(msg_f.data, MSG_SIZE, "OBS_POS= %d,%d", dx, dy);
                     write(fd_out, &msg_f, sizeof(msg_f));
+                    LOG("sent OBS_POS near to Drone");
                     //printf("OBSTACLE NEAR\n");
                 }
             }
@@ -269,5 +306,6 @@ int main(int argc, char *argv[]) {
     
     close(fd_in);
     close(fd_out);
+    LOG("Blackboard terminated");
     return 0;
 }
