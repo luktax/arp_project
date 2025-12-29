@@ -6,6 +6,11 @@
 #include <string.h>
 #include <errno.h>
 #include <time.h>
+#include <stdlib.h>
+
+#include "../include/process_log.h"
+#define PROCESS_NAME "WATCHDOG"
+#include "../include/common.h"
 
 typedef struct {
     pid_t pid;
@@ -15,50 +20,10 @@ typedef struct {
 } process_status;
 
 #define TIMEOUT 3
-#define NUM_PROCESSES 7
-
-enum { IDX_B = 0, IDX_D, IDX_I, IDX_M, IDX_O, IDX_T, IDX_W};
 
 process_status process_table[NUM_PROCESSES];
 
 static pid_t watchdog_pid;
-
-void register_process(const char *name){
-    int fd = open("log/processes.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
-    if (fd == -1){
-        perror("open process file");
-        return;
-    }
-    struct flock lock;
-    memset(&lock, 0, sizeof(lock));
-
-    lock.l_type = F_WRLCK;
-    lock.l_whence = SEEK_SET;
-
-    if (fcntl(fd, F_SETLKW, &lock) == -1){
-        perror("fcntl lock");
-        close(fd);
-        return;
-    }
-
-    char buffer[128];
-    int len = snprintf(buffer, sizeof(buffer), "%s PID=%d\n", name, getpid());
-
-    if (write(fd, buffer, len) == -1){
-        perror("write process file");
-    }
-
-    //flush
-    fsync(fd);
-
-    //unlock
-    lock.l_type = F_UNLCK;
-    if (fcntl(fd, F_SETLK, &lock) == -1){
-        perror("fcntl unlock");
-    }
-
-    close(fd);
-}
 
 void wait_for_all_processes(void) {
     int lines = 0;
@@ -66,7 +31,7 @@ void wait_for_all_processes(void) {
     while (lines < NUM_PROCESSES) {
         lines = 0;
 
-        FILE *f = fopen("log/processes.log", "r");
+        FILE *f = fopen("log/processes_pid.log", "r");
         if (f) {
             char buf[256];
             while (fgets(buf, sizeof(buf), f))
@@ -82,9 +47,9 @@ int load_process(){
     printf("[WD] loading processes...\n");
     //fflush(stdout);
 
-    FILE *f = fopen("log/processes.log", "r");
+    FILE *f = fopen("log/processes_pid.log", "r");
     if (!f){
-        perror("fopen processes.log");
+        perror("fopen processes_PID.log");
         return 0;
     }
     char name[64];
@@ -184,10 +149,16 @@ int main(int argc, char *argv[]) {
     watchdog_pid = getpid();
     sigset_t block_set, old_set;
 
-    // 1. Blocca SIGUSR1
+    // 1. Block SIGUSR1
     sigemptyset(&block_set);
     sigaddset(&block_set, SIGUSR1);
     sigprocmask(SIG_BLOCK, &block_set, &old_set);
+
+    for (int i = 0; i < NUM_PROCESSES; i++) {
+        process_table[i].pid = 0;
+        process_table[i].alive = 0;
+        process_table[i].name[0] = '\0';
+    }
 
     //write on the processes.log
     register_process("Watchdog");
@@ -196,7 +167,6 @@ int main(int argc, char *argv[]) {
     printf("[WD] waiting for all processes...\n");
     wait_for_all_processes();
     load_process();
-
     printf("[WD] All process registered\n");
 
     struct sigaction sa;
@@ -211,6 +181,14 @@ int main(int argc, char *argv[]) {
 
     struct timespec last_log_time;
     clock_gettime(CLOCK_MONOTONIC, &last_log_time);
+
+    if (argc < 3) {
+        fprintf(stderr, "Usage: %s <fd>\n", argv[0]);
+        return 1;
+    }
+    //fd_in: read from father
+    int fd_in = atoi(argv[1]);
+    fcntl(fd_in, F_SETFL, O_NONBLOCK);
 
     while (1) {
         time_t now = time(NULL);
@@ -237,9 +215,18 @@ int main(int argc, char *argv[]) {
             last_log_time = curr_time;
         }
 
-        // Piccola pausa per non saturare la CPU
+        struct msg m;
+        ssize_t n = read(fd_in, &m, sizeof(m));
+        if(n > 0){
+            if (strncmp(m.data, "ESC", 3)== 0){
+                printf("[WATCHDOG] EXIT\n");
+                break;
+            }
+        }
+
         usleep(50000); // 50ms
     }
+    close(fd_in);
     return 0;
 }
 

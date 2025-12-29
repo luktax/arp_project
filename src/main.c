@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include <sys/select.h>
 #include <unistd.h>
 #include <sys/wait.h>
@@ -8,15 +9,44 @@
 #include <errno.h>
 #include <signal.h>
 
-#define NUM_PROCESSES 7
-#define MSG_SIZE 64
+//header file
+#include "../include/process_log.h"
+#define PROCESS_NAME "MAIN"
+#include "../include/common.h"
 
-enum { IDX_B = 0, IDX_D, IDX_I, IDX_M, IDX_O, IDX_T, IDX_W};
-
-struct msg {
-    int src;
-    char data[MSG_SIZE];
+static const char *process_names[] = {
+    [IDX_B] = "Blackboard",
+    [IDX_D] = "Drone",
+    [IDX_I] = "Keyboard",
+    [IDX_M] = "Map",
+    [IDX_O] = "Obstacles",
+    [IDX_T] = "Targets",
+    [IDX_W] = "Watchdog"
 };
+
+pid_t pid_B, pid_D, pid_I, pid_M, pid_O, pid_T, pid_W;
+
+void clean_children() {
+    if (pid_W > 0) kill(pid_W, SIGTERM);
+    if (pid_B > 0) kill(pid_B, SIGTERM);
+    if (pid_D > 0) kill(pid_D, SIGTERM);
+    if (pid_I > 0) kill(pid_I, SIGTERM);
+    if (pid_M > 0) kill(pid_M, SIGTERM);
+    if (pid_O > 0) kill(pid_O, SIGTERM);
+    if (pid_T > 0) kill(pid_T, SIGTERM);
+}
+
+void handle_signal(int sig) {
+    printf("\n[MAIN] Caught signal %d, terminating children...\n", sig);
+    clean_children();
+    
+    // Wait for children to exit to avoid zombies
+    while(wait(NULL) > 0);
+    
+    printf("[MAIN] All children terminated. Exiting.\n");
+    exit(0);
+}
+
 
 int pipe_parent_to_child[NUM_PROCESSES][2]; //the child reads from [0], the father write on [1]
 int pipe_child_to_parent[NUM_PROCESSES][2]; //the father reads from [0], the child write on [1]
@@ -28,8 +58,15 @@ typedef struct{
 } route_t;
 
 int main(){
-
+    LOG("Initialization");
     signal(SIGPIPE, SIG_IGN);
+    
+    struct sigaction sa;
+    sa.sa_handler = handle_signal;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
 
     //pipe creation
     for (int i = 0; i < NUM_PROCESSES; i++) {
@@ -39,10 +76,13 @@ int main(){
             exit(EXIT_FAILURE);
         }
     }
+    LOG("Pipe created");
 
     unlink("log/watchdog.log");
-    unlink("log/processes.log");
-    pid_t pid_B, pid_D, pid_I, pid_M, pid_O, pid_T, pid_W;
+    unlink("log/processes_pid.log");
+    unlink("log/system.log");
+
+    unlink("log/system.log");
 
     char fd_pc[NUM_PROCESSES][16];
     char fd_cp[NUM_PROCESSES][16];
@@ -72,6 +112,7 @@ int main(){
         perror("execl targets");
         exit(EXIT_FAILURE);
     }
+    LOG("Watchdog fork");
 
     char watchdog_pid[16];
     sprintf(watchdog_pid, "%d", pid_W);
@@ -96,6 +137,7 @@ int main(){
         perror("execl blackboard");
         _exit(EXIT_FAILURE);
     }
+    LOG("Blackboard fork");
 
     //DRONE
     pid_D = fork();
@@ -117,6 +159,7 @@ int main(){
         perror("execl drone");
         exit(EXIT_FAILURE);
     }
+    LOG("Drone fork");
 
     //KEYBOARD
     pid_I = fork();
@@ -139,6 +182,7 @@ int main(){
         perror("execl keyboard");
         _exit(EXIT_FAILURE);
     }
+    LOG("Keyboard fork");
 
     //MAP
     pid_M = fork();
@@ -160,6 +204,7 @@ int main(){
         perror("execl konsole map");
         _exit(EXIT_FAILURE);
     }
+    LOG("Map fork");
 
     //OBSTACLES
     pid_O = fork();
@@ -180,6 +225,7 @@ int main(){
         perror("execl obstacle");
         exit(EXIT_FAILURE);
     }
+    LOG("Obstacles fork");
 
     //TARGETS
     pid_T = fork();
@@ -200,6 +246,7 @@ int main(){
         perror("execl targets");
         exit(EXIT_FAILURE);
     }
+    LOG("Targets fork");
 
     // FATHER BLOCK
     for (int i = 0; i < NUM_PROCESSES; i++) {
@@ -222,8 +269,10 @@ int main(){
     route_table[IDX_B].dest[route_table[IDX_B].num++] = IDX_T;  //BB->T
     route_table[IDX_T].dest[route_table[IDX_T].num++] = IDX_B;  //T->BB
 
+    LOG("Route table created");
 
     while (1) {
+        LOG("waiting for a message to redirect");
         fd_set rfds;
         FD_ZERO(&rfds);
 
@@ -262,7 +311,7 @@ int main(){
                 }
 
                 if (strncmp(m.data, "ESC", 3) == 0){
-                    printf("ESC RECEIVED");
+                    printf("ESC RECEIVED\n");
                     esc_received = 1;
                 }
 
@@ -279,15 +328,21 @@ int main(){
                         fprintf(stderr, "Partial write src=%d -> dst=%d fd=%d written=%zd expected=%d\n",
                             src, dst, write_fd, w, n);
                     }
+                    char log_msg[128];
+                    snprintf(log_msg, sizeof(log_msg), "Message redirected from %s to %s", process_names[src], process_names[dst]);
+                    LOG(log_msg);
                 }
+                
             }
         }
         if (esc_received){
+            LOG("ESC received, closing...");
             for (int i = 0; i < NUM_PROCESSES; i++) {
                 int write_fd = pipe_parent_to_child[i][1];
-                struct { char data[4]; } esc_msg;
-                strncpy(esc_msg.data, "ESC", 4);
-                write(write_fd, &esc_msg, 4);
+                struct msg esc_msg;
+                esc_msg.src = IDX_B;
+                strncpy(esc_msg.data, "ESC", MSG_SIZE);
+                write(write_fd, &esc_msg, sizeof(esc_msg));
                 //printf("[MAIN] EXIT\n");
             }
             break;
@@ -300,6 +355,7 @@ int main(){
     waitpid(pid_M, NULL, 0);
     waitpid(pid_O, NULL, 0);
     waitpid(pid_T, NULL, 0);
-    
+    waitpid(pid_W, NULL, 0);
+    LOG("Execution terminated correctly");
     return 0;
 }
