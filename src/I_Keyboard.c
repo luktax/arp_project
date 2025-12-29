@@ -26,11 +26,11 @@ void draw_keypad(int start_y, int start_x, int cell_h, int cell_w, char *keys[RO
             int ky = y + cell_h/2;
             int kx = x + (cell_w/2);
 
-            // color if pressed
+            // Color if key is currently pressed
             if (toupper(pressed) == keys[row][col][0])
                 attron(COLOR_PAIR(2) | A_BOLD);
 
-            // cell border
+            // Cell border
             for (int i = 0; i < cell_w; i++) {
                 mvaddch(y, x + i, '-');                
                 mvaddch(y + cell_h - 1, x + i, '-');   
@@ -55,7 +55,7 @@ void draw_keypad(int start_y, int start_x, int cell_h, int cell_w, char *keys[RO
 
 int main(int argc, char *argv[]) {
 
-    //write on the processes.log
+    // Register process for logging
     register_process("Keyboard");
     LOG("Keyboard process started");
 
@@ -65,18 +65,18 @@ int main(int argc, char *argv[]) {
     }
 
     int fd_out = atoi(argv[2]);
-    // watchdog pid to send signals
+    // Watchdog PID to send alive signals
     pid_t watchdog_pid = atoi(argv[3]);
 
     initscr();
-    cbreak();        // 
-    noecho();        // 
-    keypad(stdscr, TRUE); // 
+    cbreak();        // Disable line buffering
+    noecho();        // Disable echoing of typed characters
+    keypad(stdscr, TRUE); // Enable arrow keys and special keys
     nodelay(stdscr, TRUE);
     curs_set(FALSE);
     start_color();
 
-    init_pair(1, COLOR_WHITE, -1); // default
+    init_pair(1, COLOR_WHITE, -1); // Default
     init_pair(2, COLOR_GREEN, -1);
 
     mvprintw(0, 0, "I_Keyboard: press a button to move");
@@ -88,7 +88,7 @@ int main(int argc, char *argv[]) {
     getmaxyx(stdscr, height, width);
 
     int start_y = height/2-7, start_x = width/2-7;
-    int cell_h = 3, cell_w = 5;  // cells dimensions
+    int cell_h = 3, cell_w = 5;  // Cell dimensions
     char *keys[3][3] = {
         {"Q", "W", "E"},
         {"A", "S", "D"},
@@ -103,7 +103,7 @@ int main(int argc, char *argv[]) {
     struct msg m;
 
     while (1) {
-        ch = getch(); // inout
+        ch = getch(); // Get user input
 
         if (ch != ERR) {
             if (ch == KEY_RESIZE) {
@@ -127,7 +127,7 @@ int main(int argc, char *argv[]) {
                 LOG(log_msg);
             }
 
-            // write to father
+            // Write message to parent/router
             if (write(fd_out, &m, sizeof(m)) < 0) {
                 perror("write");
             }
@@ -143,7 +143,7 @@ int main(int argc, char *argv[]) {
             refresh();
         }
 
-        //signals the watchdog
+        // Send alive signal to watchdog
         union sigval val;
         val.sival_int = time(NULL);
         

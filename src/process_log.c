@@ -69,10 +69,10 @@ void register_process(const char *name){
         perror("write process file");
     }
 
-    //flush
+    // Flush output
     fsync(fd);
 
-    //unlock
+    // Unlock the file
     lock.l_type = F_UNLCK;
     if (fcntl(fd, F_SETLK, &lock) == -1){
         perror("fcntl unlock");
