@@ -147,6 +147,7 @@ void watchdog_log(){
 
 int main(int argc, char *argv[]) {
     watchdog_pid = getpid();
+    LOG("Watchdog process started");
     sigset_t block_set, old_set;
 
     // 1. Block SIGUSR1
@@ -162,12 +163,14 @@ int main(int argc, char *argv[]) {
 
     //write on the processes.log
     register_process("Watchdog");
+    
     //printf("[WD] wrote\n");
 
     printf("[WD] waiting for all processes...\n");
     wait_for_all_processes();
     load_process();
     printf("[WD] All process registered\n");
+    LOG("All processes registered, starting monitoring");
 
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
@@ -198,7 +201,12 @@ int main(int argc, char *argv[]) {
                 if (process_table[i].alive){
                     printf("ALERT: process %s (PID %d) not responding!\n",
                             process_table[i].name, process_table[i].pid);
-                    process_table[i].alive = 0;        
+                    process_table[i].alive = 0;
+                    {
+                        char log_msg[64];
+                        snprintf(log_msg, sizeof(log_msg), "Process %s (PID %d) not responding!", process_table[i].name, process_table[i].pid);
+                        LOG(log_msg);
+                    }
                 }
             } else {
                 process_table[i].alive = 1;
@@ -220,6 +228,7 @@ int main(int argc, char *argv[]) {
         if(n > 0){
             if (strncmp(m.data, "ESC", 3)== 0){
                 printf("[WATCHDOG] EXIT\n");
+                LOG("Watchdog received ESC, exiting");
                 break;
             }
         }
@@ -227,6 +236,7 @@ int main(int argc, char *argv[]) {
         usleep(50000); // 50ms
     }
     close(fd_in);
+    LOG("Watchdog terminated");
     return 0;
 }
 

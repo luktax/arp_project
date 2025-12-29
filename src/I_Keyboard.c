@@ -57,6 +57,7 @@ int main(int argc, char *argv[]) {
 
     //write on the processes.log
     register_process("Keyboard");
+    LOG("Keyboard process started");
 
     if (argc < 3) {
         fprintf(stderr, "Usage: %s <fd>\n", argv[0]);
@@ -105,8 +106,26 @@ int main(int argc, char *argv[]) {
         ch = getch(); // inout
 
         if (ch != ERR) {
+            if (ch == KEY_RESIZE) {
+                getmaxyx(stdscr, height, width);
+                start_y = height/2-7;
+                start_x = width/2-7;
+                clear();
+                draw_keypad(start_y, start_x, cell_h, cell_w, keys, 0);
+                mvprintw(0, 0, "I_Keyboard: press a button to move");
+                mvprintw(1, 0, "Press ESC to exit");
+                mvprintw(2, 0, "Press R to reset");
+                refresh();
+                continue;
+            }
+
             m.src = IDX_I;
             snprintf(m.data, MSG_SIZE, "%c", ch);
+            {
+                char log_msg[64];
+                snprintf(log_msg, sizeof(log_msg), "Key pressed: %c", ch);
+                LOG(log_msg);
+            }
 
             // write to father
             if (write(fd_out, &m, sizeof(m)) < 0) {
@@ -114,7 +133,11 @@ int main(int argc, char *argv[]) {
             }
 
             // ESC
-            if (ch == 27){ printf("[I_KEYBOARD] EXIT\n"); break;}
+            if (ch == 27){ 
+                printf("[I_KEYBOARD] EXIT\n");
+                LOG("Keyboard received ESC, exiting");
+                break;
+            }
 
             draw_keypad(start_y, start_x, cell_h, cell_w, keys, ch);
             refresh();
@@ -132,5 +155,6 @@ int main(int argc, char *argv[]) {
 
     endwin();
     close(fd_out);
+    LOG("Keyboard terminated");
     return 0;
 }
