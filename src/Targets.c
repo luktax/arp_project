@@ -41,6 +41,7 @@ int main(int argc, char *argv[]) {
 
     int window_changed = 1;
     int reset_sent = 0;
+    int goal = 0;
 
     while(1){
         struct msg m;
@@ -62,6 +63,13 @@ int main(int argc, char *argv[]) {
                 if (strncmp(m.data, "STOP_T", 6) == 0){
                     window_changed = 0;
                     //printf("[T] STOP\n");
+                }
+                if (strncmp(m.data, "TARGET_REACHED", 14)==0) {
+                    int x = (rand() % (W-2)) + 1;
+                    int y = (rand() % (H-2)) + 1;
+
+                    snprintf(bb_msg.data, MSG_SIZE, "NEW: %d,%d", x, y);
+                    write(fd_out, &bb_msg, sizeof(bb_msg));
                 }
             }
             if (strncmp(m.data, "ESC", 3)== 0){

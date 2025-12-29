@@ -200,30 +200,32 @@ int main(int argc, char *argv[]) {
         
         if (!running) break;
         //repulsive Force x and y from obstacles
-        float dist = sqrt(dx*dx + dy*dy);
+        float dist_x = X - dx;
+        float dist_y = Y - dy;
+        float dist = sqrt(dist_x*dist_x + dist_y*dist_y);
         float Frep_x = 0;
         float Frep_y = 0;
         if (dist < params.RHO && dist>0){
-            Frep_x = params.NI * (1.0/dist - 1.0/params.RHO) * (dx / dist)*5;
-            Frep_y = params.NI * (1.0/dist - 1.0/params.RHO) * (dy / dist)*5;
+            Frep_x = params.NI * (1.0/dist - 1.0/params.RHO) * (dist_x / dist)*5;
+            Frep_y = params.NI * (1.0/dist - 1.0/params.RHO) * (dist_y / dist)*5;
         }
 
         //repulsive Force x and y from the walls
         //wall left
-        dx = D.x;
-        if (dx < params.RHO){ Frep_x += params.NI * (1.0/dx - 1.0/params.RHO)*(dx/dx);}
+        dist_x = X;
+        if (dist_x < params.RHO){ Frep_x += params.NI * (1.0/dist_x - 1.0/params.RHO)*(dist_x/dist_x);}
 
         //wall right
-        dx = abs(D.x - width);
-        if (dx < params.RHO) {Frep_x -= params.NI * (1.0/dx - 1.0/params.RHO)*(dx/dx);}
+        dist_x = abs(X - width);
+        if (dist_x < params.RHO) {Frep_x -= params.NI * (1.0/dist_x - 1.0/params.RHO)*(dist_x/dist_x);}
 
         //wall top
-        dy = D.y;
-        if (dy < params.RHO) {Frep_y += params.NI * (1.0/dy - 1.0/params.RHO)*(dy/dy);}
+        dist_y = Y;
+        if (dist_y < params.RHO) {Frep_y += params.NI * (1.0/dist_y - 1.0/params.RHO)*(dist_y/dist_y);}
 
         //wall bottom
-        dy = abs(D.y- height);
-        if (dy < params.RHO) {Frep_y -= params.NI * (1.0/dy - 1.0/params.RHO)*(dy/dy);}
+        dist_y = abs(Y- height);
+        if (dist_y < params.RHO) {Frep_y -= params.NI * (1.0/dist_y - 1.0/params.RHO)*(dist_y/dist_y);}
 
         //printf("Repulsive force: %f, %f", Frep_x, Frep_y);
 
@@ -264,10 +266,10 @@ int main(int argc, char *argv[]) {
         D.x = (int)roundf(X);
         D.y = (int)roundf(Y);
 
-        if (D.x < 1){ D.x = 1; D.vx = 0;}
-        if (D.y < 1) {D.y = 1; D.vy = 0;}
-        if (D.x >= width - 1) {D.x = width - 2; D.vx = 0;}
-        if (D.y >= height - 1) {D.y = height - 2; D.vy = 0;}
+        if (D.x < 1){ D.x = 1; X = 1.0; D.vx = 0;}
+        if (D.y < 1) {D.y = 1; Y = 1.0; D.vy = 0;}
+        if (D.x >= width - 1) {D.x = width - 2; X = (float)(width - 2); D.vx = 0;}
+        if (D.y >= height - 1) {D.y = height - 2; Y = (float)(height - 2); D.vy = 0;}
 
         //printf("x=%d, y=%d\n", D.x, D.y);
         //printf("Fx=%f, Fy=%f\n", Fx_TOT, Fy_TOT);

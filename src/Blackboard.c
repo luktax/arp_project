@@ -41,8 +41,8 @@ int main(int argc, char *argv[]) {
     register_process("Blackboard");
     LOG("Blackboard process started");
 
-    int ni = 1.0;
     double d0 = 5.0;
+    int waiting_reply = 0;
 
     int tmp_obs_x[MAX_OBS];
     int tmp_obs_y[MAX_OBS];
@@ -54,7 +54,7 @@ int main(int argc, char *argv[]) {
     int tmp_tgs_y[MAX_OBS];
     int tmp_num_tgs = 0;
 
-    int received_tgs = 0;
+    int received_tg = 0;
 
     int received_resize = 0;
 
@@ -71,7 +71,7 @@ int main(int argc, char *argv[]) {
 
     // watchdog pid to send signals
     pid_t watchdog_pid = atoi(argv[3]);
-
+    
     struct blackboard bb = {0, 0, {0}, {0}, 0, {0}, {0}, 0, 155, 30, 1};
     int expected_obs = (int)roundf(bb.H*bb.W/1000);
     int expected_tgs = (int)roundf(bb.H*bb.W/1000);
@@ -158,6 +158,10 @@ int main(int argc, char *argv[]) {
                 //printf("RESET");
                 
                 expected_obs = (int)roundf(bb.H*bb.W/1000);
+                expected_tgs = (int)roundf(bb.H*bb.W/1000);
+                tmp_num_obs = 0;
+                tmp_num_tgs = 0;
+
                 struct msg obs_msg = m;
                 obs_msg.src = IDX_B;
                 if(write(fd_out, &obs_msg, sizeof(obs_msg))< 0){
@@ -173,6 +177,28 @@ int main(int argc, char *argv[]) {
                     printf("[BB] RESET obstacles ricevuto\n");
                     continue;
                 } 
+                else if (strncmp(m.data, "NEW", 3) == 0){
+                    int x, y;
+                    sscanf(m.data, "NEW: %d,%d", &x, &y);
+                    if (bb.num_obs > 0) {
+                        // Shift internal obstacle list
+                        for (int i = 0; i < bb.num_obs - 1; i++) {
+                            bb.obs_x[i] = bb.obs_x[i + 1];
+                            bb.obs_y[i] = bb.obs_y[i + 1];
+                        }
+                        bb.obs_x[bb.num_obs - 1] = x;
+                        bb.obs_y[bb.num_obs - 1] = y;
+
+                        struct msg map_msg;
+                        map_msg.src = IDX_B;
+                        snprintf(map_msg.data, MSG_SIZE, "O_SHIFT=%d,%d", x, y);
+                        write(fd_out, &map_msg, sizeof(map_msg));
+                        
+                        snprintf(map_msg.data, MSG_SIZE, "REDRAW_O");
+                        write(fd_out, &map_msg, sizeof(map_msg));
+                        LOG("Shifted obstacle list and notified Map");
+                    }
+                }
 
                 if (tmp_num_obs < expected_obs){
                     int x, y; 
@@ -187,35 +213,34 @@ int main(int argc, char *argv[]) {
                         LOG(log_msg);
                     }
                     //printf("[BB] obstacle position: %d,%d; n%d\n", x, y, tmp_num_obs);
-                }
+                    
+                    if (tmp_num_obs == expected_obs){
+                        struct msg map_msg;
+                        map_msg.src = IDX_B;
 
-                //printf("[BB] exp obs = %d, tmp_obs = %d \n", expected_obs, tmp_num_obs);
-                if (tmp_num_obs == expected_obs){
-
-                    //bb.num_obs = 0;
-                    struct msg map_msg;
-                    map_msg.src = IDX_B;
-
-                    snprintf(map_msg.data, MSG_SIZE, "STOP_O");
-                    write(fd_out, &map_msg, sizeof(map_msg));
-                    LOG("sent STOP_O");
-                    //printf("[BB->O] STOP INVIATO\n");
-
-                    for(int i=0; i<tmp_num_obs; i++) {
-                        bb.obs_x[i] = tmp_obs_x[i];
-                        bb.obs_y[i] = tmp_obs_y[i];
-                        bb.num_obs++;
-
-                        snprintf(map_msg.data, MSG_SIZE, "O=%d,%d",  bb.obs_x[i], bb.obs_y[i]);
+                        snprintf(map_msg.data, MSG_SIZE, "RESET_O");
                         write(fd_out, &map_msg, sizeof(map_msg));
-                    }
 
-                    //printf("[BB] obs = %d\n", expected_obs);  
-                    snprintf(map_msg.data, MSG_SIZE, "REDRAW_O"); 
-                    write(fd_out, &map_msg, sizeof(map_msg)); 
-                    LOG("Forwarding REDRAW_O to Map");
-                    //printf("[BB] REDRAW_O\n"); 
-                } 
+                        snprintf(map_msg.data, MSG_SIZE, "STOP_O");
+                        write(fd_out, &map_msg, sizeof(map_msg));
+                        LOG("sent STOP_O and RESET_O");
+
+                        for(int i=0; i<tmp_num_obs; i++) {
+                            bb.obs_x[i] = tmp_obs_x[i];
+                            bb.obs_y[i] = tmp_obs_y[i];
+                            bb.num_obs++;
+
+                            snprintf(map_msg.data, MSG_SIZE, "O=%d,%d",  bb.obs_x[i], bb.obs_y[i]);
+                            write(fd_out, &map_msg, sizeof(map_msg));
+                        }
+
+                        snprintf(map_msg.data, MSG_SIZE, "REDRAW_O"); 
+                        write(fd_out, &map_msg, sizeof(map_msg)); 
+                        LOG("Forwarding REDRAW_O to Map");
+                        
+                        tmp_num_obs = 1000; // Safe sentinel
+                    }
+                }
             }
             //from the targets
             else if (m.src == IDX_T) {
@@ -225,59 +250,82 @@ int main(int argc, char *argv[]) {
                     printf("[BB] RESET targets ricevuto\n");
                     continue;
                 }
-
-                int x, y;
-                sscanf(m.data, "%d,%d", &x, &y);
-
-                expected_tgs = (int)roundf(bb.H * bb.W / 1000);
-
-                if (tmp_num_tgs < expected_tgs) {
-                    tmp_tgs_x[tmp_num_tgs] = x;
-                    tmp_tgs_y[tmp_num_tgs] = y;
-                    tmp_num_tgs++;
-
-                    {
-                        char log_msg[64];
-                        snprintf(log_msg, sizeof(log_msg), "Received Target at %d,%d", x, y);
-                        LOG(log_msg);
-                    }
-                    //printf("[BB] target position: %d,%d; n%d\n", x, y, tmp_num_tgs);
-                }
-
-                //printf("[BB] exp tgs = %d, tmp_tgs = %d\n", expected_tgs, tmp_num_tgs);
-
-                // Se ho ricevuto abbastanza target → aggiorno BB e notifico la mappa
-                if (tmp_num_tgs == expected_tgs) {
-
-                    struct msg map_msg;
-                    map_msg.src = IDX_B;
-
-                    // Blocca il generatore di targets
-                    snprintf(map_msg.data, MSG_SIZE, "STOP_T");
-                    write(fd_out, &map_msg, sizeof(map_msg));
-                    LOG("sent STOP_T");
-                    //printf("[BB->T] STOP INVIATO\n");
-
-                    // Salvo target nella BB e li mando alla mappa
-                    bb.num_tgs = 0;
-                    for (int i = 0; i < tmp_num_tgs; i++) {
-                        bb.tgs_x[i] = tmp_tgs_x[i];
-                        bb.tgs_y[i] = tmp_tgs_y[i];
+                else if (strncmp(m.data, "NEW", 3) == 0){
+                    int x, y;
+                    sscanf(m.data, "NEW: %d,%d", &x, &y);
+                    if (bb.num_tgs < MAX_OBS) {
+                        bb.tgs_x[bb.num_tgs] = x;
+                        bb.tgs_y[bb.num_tgs] = y;
                         bb.num_tgs++;
-
-                        snprintf(map_msg.data, MSG_SIZE, "T=%d,%d",
-                                bb.tgs_x[i], bb.tgs_y[i]);
+                        
+                        // Reset waiting flag
+                        waiting_reply = 0; 
+                        
+                        struct msg map_msg;
+                        map_msg.src = IDX_B;
+                        snprintf(map_msg.data, MSG_SIZE, "GOAL=%d,%d", x, y);
                         write(fd_out, &map_msg, sizeof(map_msg));
-                                            }
+                        
+                        snprintf(map_msg.data, MSG_SIZE, "REDRAW_T"); 
+                        write(fd_out, &map_msg, sizeof(map_msg));
+                    }
+                }
+                else {
+                    int x, y;
+                    sscanf(m.data, "%d,%d", &x, &y);
 
-                    // Richiedi ridisegno target
-                    snprintf(map_msg.data, MSG_SIZE, "REDRAW_T");
-                    write(fd_out, &map_msg, sizeof(map_msg));
-                    LOG("Forwarding REDRAW_T to Map");
-                    //printf("[BB] REDRAW_T\n");
+                    expected_tgs = (int)roundf(bb.H * bb.W / 1000);
+
+                    if (tmp_num_tgs < expected_tgs) {
+                        tmp_tgs_x[tmp_num_tgs] = x;
+                        tmp_tgs_y[tmp_num_tgs] = y;
+                        tmp_num_tgs++;
+
+                        {
+                            char log_msg[64];
+                            snprintf(log_msg, sizeof(log_msg), "Received Target at %d,%d", x, y);
+                            LOG(log_msg);
+                        }
+                        //printf("[BB] target position: %d,%d; n%d\n", x, y, tmp_num_tgs);
+                        
+                        if (tmp_num_tgs == expected_tgs) {
+
+                            struct msg map_msg;
+                            map_msg.src = IDX_B;
+
+                            snprintf(map_msg.data, MSG_SIZE, "RESET_T");
+                            write(fd_out, &map_msg, sizeof(map_msg));
+
+                            // Blocca il generatore di targets
+                            snprintf(map_msg.data, MSG_SIZE, "STOP_T");
+                            write(fd_out, &map_msg, sizeof(map_msg));
+                            LOG("sent STOP_T and RESET_T");
+                            //printf("[BB->T] STOP INVIATO\n");
+
+                            // Salvo target nella BB e li mando alla mappa
+                            bb.num_tgs = 0;
+                            for (int i = 0; i < tmp_num_tgs; i++) {
+                                bb.tgs_x[i] = tmp_tgs_x[i];
+                                bb.tgs_y[i] = tmp_tgs_y[i];
+                                bb.num_tgs++;
+
+                                snprintf(map_msg.data, MSG_SIZE, "T[%d]=%d,%d",
+                                        i, bb.tgs_x[i], bb.tgs_y[i]);
+                                write(fd_out, &map_msg, sizeof(map_msg));
+                            }
+
+                            // Richiedi ridisegno target
+                            snprintf(map_msg.data, MSG_SIZE, "REDRAW_T");
+                            write(fd_out, &map_msg, sizeof(map_msg));
+                            LOG("Forwarding REDRAW_T to Map");
+                            
+                            tmp_num_tgs = 1000; // Safe sentinel
+                        }
+                    }
                 }
             }
 
+            //checking the distance between the drone and the obstacles
             for (int i = 0; i < bb.num_obs; i++){
                 int dx = (bb.drone_x - bb.obs_x[i]);
                 int dy = (bb.drone_y - bb.obs_y[i]);
@@ -287,13 +335,35 @@ int main(int argc, char *argv[]) {
                     struct msg msg_f;
                     msg_f.src = IDX_B;
 
-                    snprintf(msg_f.data, MSG_SIZE, "OBS_POS= %d,%d", dx, dy);
+                    snprintf(msg_f.data, MSG_SIZE, "OBS_POS= %d,%d", bb.obs_x[i], bb.obs_y[i]);
                     write(fd_out, &msg_f, sizeof(msg_f));
                     LOG("sent OBS_POS near to Drone");
                     //printf("OBSTACLE NEAR\n");
                 }
             }
-            
+            //checking the distance between the drone and the first target
+            if (bb.num_tgs > 0 && !waiting_reply) {
+                int dx = (bb.drone_x - bb.tgs_x[0]);
+                int dy = (bb.drone_y - bb.tgs_y[0]);
+
+                double dis = sqrt(dx*dx + dy*dy);
+                if (dis <= 1.0){ // Threshold 1.0
+                    struct msg msg_t;
+                    msg_t.src = IDX_B;
+
+                    // Shift Logic
+                    for (int i = 0; i < bb.num_tgs - 1; i++) {
+                        bb.tgs_x[i] = bb.tgs_x[i + 1];
+                        bb.tgs_y[i] = bb.tgs_y[i + 1];
+                    }
+                    bb.num_tgs--;
+                    snprintf(msg_t.data, MSG_SIZE, "TARGET_REACHED");
+                    write(fd_out, &msg_t, sizeof(msg_t));
+                    LOG("Goal reached by the drone");
+                    
+                    waiting_reply = 1;
+                }
+            }
         }
         //signal the watchdog
         union sigval val;
