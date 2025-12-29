@@ -18,6 +18,8 @@
 
 #define STATS_WIDTH 35
 
+int grabbed = 0;
+
 void draw_window(WINDOW *win){
     int H, W;
     getmaxyx(stdscr, H, W);
@@ -61,7 +63,7 @@ void draw_all(WINDOW *win, int obs_x[MAX_OBS], int obs_y[MAX_OBS], int num_obs, 
     }
     for (int i = 0; i < num_tgs; i++){
         wattron(win, COLOR_PAIR(4));
-        mvwaddch(win, tgs_y[i], tgs_x[i], 'T');
+        mvwprintw(win, tgs_y[i], tgs_x[i], "%d", i+1+grabbed);
         //mvwprintw(win, tgs_y[i], tgs_x[i], "%d,%d", tgs_x[i], tgs_y[i]);
         wattroff(win, COLOR_PAIR(4));
 
@@ -231,13 +233,47 @@ int main(int argc, char *argv[]) {
 
             }
             //if it is a target
-            else if (m.src == IDX_B && strncmp(m.data, "T=", 2) == 0){
+            else if (m.src == IDX_B && strncmp(m.data, "T[", 2) == 0){
+                int t_i, t_x, t_y;
+                sscanf(m.data, "T[%d]=%d,%d", &t_i, &t_x, &t_y);
+                if (t_i >= 0 && t_i < MAX_OBS) {
+                    tgs_x[t_i] = t_x;
+                    tgs_y[t_i] = t_y;
+                    if (t_i >= num_tgs) num_tgs = t_i + 1;
+                }
+            }
+            else if (m.src == IDX_B && strncmp(m.data, "GOAL=", 5) == 0){
                 int t_x, t_y;
-                sscanf(m.data, "T=%d,%d", &t_x, &t_y);
-                tgs_x[num_tgs] = t_x;
-                tgs_y[num_tgs] = t_y;
-                num_tgs++;
-                //printf("[M] posizione target: %d,%d\n", t_x, t_y);
+                sscanf(m.data, "GOAL=%d,%d", &t_x, &t_y);
+                
+                for (int i = 0; i < num_tgs - 1; i++) {
+                        tgs_x[i] = tgs_x[i + 1];
+                        tgs_y[i] = tgs_y[i + 1];
+                }
+                if (num_tgs > 0) {
+                    tgs_x[num_tgs - 1] = t_x;
+                    tgs_y[num_tgs - 1] = t_y;
+                }
+                
+                grabbed++;
+            }
+            else if (m.src == IDX_B && strncmp(m.data, "RESET_O", 7) == 0){
+                num_obs = 0;
+            }
+            else if (m.src == IDX_B && strncmp(m.data, "O_SHIFT=", 8) == 0){
+                int x, y;
+                sscanf(m.data, "O_SHIFT=%d,%d", &x, &y);
+                if (num_obs > 0) {
+                    for (int i = 0; i < num_obs - 1; i++) {
+                        obs_x[i] = obs_x[i + 1];
+                        obs_y[i] = obs_y[i + 1];
+                    }
+                    obs_x[num_obs - 1] = x;
+                    obs_y[num_obs - 1] = y;
+                }
+            }
+            else if (m.src == IDX_B && strncmp(m.data, "RESET_T", 7) == 0){
+                num_tgs = 0;
             }
             else if (m.src == IDX_B && strncmp(m.data, "REDRAW_O", 8) == 0){
                 ready_o = 1;

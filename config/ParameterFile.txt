@@ -1,6 +1,6 @@
 M = 1.0
-K = 1.0
+K = 4.0
 T = 0.05
-USER_FORCE = 10.0
-RHO = 5
+USER_FORCE = 5
+RHO = 3
 NI = 40

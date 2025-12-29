@@ -89,6 +89,18 @@ int main(int argc, char *argv[]) {
             write(fd_out, &bb_msg, sizeof(bb_msg));
         } else {
             reset_sent = 0;
+            
+            // Add periodic update logic (5 seconds = 100 iterations of 50ms)
+            static int counter = 0;
+            counter++;
+            if (counter >= 100) {
+                counter = 0;
+                int x = (rand() % (W - 2)) + 1;
+                int y = (rand() % (H - 2)) + 1;
+                snprintf(bb_msg.data, MSG_SIZE, "NEW: %d,%d", x, y);
+                write(fd_out, &bb_msg, sizeof(bb_msg));
+                LOG("Sent periodic NEW obstacle coordinate");
+            }
         } 
 
         //signals the watchdog
