@@ -124,10 +124,10 @@ void watchdog_log(){
     char time_str[16];
     strftime(time_str, sizeof(time_str), "%H:%M:%S", tm_info);
 
-    // Scrivi intestazione del ciclo
+    // Write cycle header
     dprintf(fd, "%s WATCHDOG: check cycle\n", time_str);
 
-    // Scrivi lo stato di ogni processo
+    // Write the status of each process
     for (int i = 0; i < NUM_PROCESSES-1; i++) {
         const char *status = process_table[i].alive ? "ALIVE" : "DEAD";
         dprintf(fd, "%s %s PID=%d status=%s\n", time_str, process_table[i].name, process_table[i].pid, status);
@@ -136,7 +136,7 @@ void watchdog_log(){
     // Flush
     fsync(fd);
 
-    // Sblocca il file
+    // Unlock the file
     lock.l_type = F_UNLCK;
     if (fcntl(fd, F_SETLK, &lock) == -1) {
         perror("fcntl unlock");
@@ -161,15 +161,13 @@ int main(int argc, char *argv[]) {
         process_table[i].name[0] = '\0';
     }
 
-    //write on the processes.log
+    // Register process for logging
     register_process("Watchdog");
     
-    //printf("[WD] wrote\n");
-
     printf("[WD] waiting for all processes...\n");
     wait_for_all_processes();
     load_process();
-    printf("[WD] All process registered\n");
+    printf("[WD] All processes registered\n");
     LOG("All processes registered, starting monitoring");
 
     struct sigaction sa;
@@ -189,7 +187,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Usage: %s <fd>\n", argv[0]);
         return 1;
     }
-    //fd_in: read from father
+    // fd_in: read from parent/router
     int fd_in = atoi(argv[1]);
     fcntl(fd_in, F_SETFL, O_NONBLOCK);
 
@@ -213,7 +211,7 @@ int main(int argc, char *argv[]) {
             }
         }
         
-        // --- Log massimo 1 volta al secondo ---
+        // --- Log at most once per second ---
         struct timespec curr_time;
         clock_gettime(CLOCK_MONOTONIC, &curr_time);
         long diff_ms = (curr_time.tv_sec - last_log_time.tv_sec) * 1000 +

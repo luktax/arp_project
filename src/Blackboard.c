@@ -18,18 +18,18 @@
 #define MAX_OBS 100
 
 struct blackboard {
-    //Drone
+    // Drone state
     int drone_x;
     int drone_y;
-    //obstacle
+    // Obstacles state
     int obs_x[MAX_OBS];
     int obs_y[MAX_OBS];
     int num_obs;
-    //targets
+    // Targets state
     int tgs_x[MAX_OBS];
     int tgs_y[MAX_OBS];
     int num_tgs;
-    //map
+    // Map state
     int W, H;
     int running;
 };
@@ -37,7 +37,7 @@ struct blackboard {
 
 int main(int argc, char *argv[]) {
     
-    //write on the processes.log
+    // Register process for logging
     register_process("Blackboard");
     LOG("Blackboard process started");
 
@@ -63,13 +63,13 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    // fd_in: read from father
+    // fd_in: read from parent/router
     int fd_in = atoi(argv[1]);
 
     // fd_out: write to father
     int fd_out = atoi(argv[2]);
 
-    // watchdog pid to send signals
+    // Watchdog PID to send alive signals
     pid_t watchdog_pid = atoi(argv[3]);
     
     struct blackboard bb = {0, 0, {0}, {0}, 0, {0}, {0}, 0, 155, 30, 1};
@@ -91,17 +91,15 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        //READ FROM ROUTER
+        // READ FROM ROUTER/PARENT
         if (FD_ISSET(fd_in, &fds)){
-            //read the msg
+            // Read incoming message
             struct msg m;
             ssize_t n = read(fd_in, &m, sizeof(m));
 
-            //if it is from the keyboard
+            // Message from Keyboard (I)
             if (m.src == IDX_I) {
-                //printf("[I->BB] Ricevuto codice: %d\n", m.data[0]);
-
-                // send the msg to the drone
+                // Forward the message to the drone
                 if (write(fd_out, &m, sizeof(m)) < 0) {
                     perror("write to drone via router");
                 }
@@ -116,7 +114,7 @@ int main(int argc, char *argv[]) {
                     bb.running = 0;
                 }
             }
-            //if it is from the drone
+            // Message from Drone (D)
             else if(m.src == IDX_D){
                 // Check if it's a STATS message first
                 if (strncmp(m.data, "STATS", 5) == 0) {
@@ -144,7 +142,7 @@ int main(int argc, char *argv[]) {
                     }
                 }
             }
-            //if it is from the map
+            // Message from Map (M)
             else if (m.src == IDX_M && strncmp(m.data, "RESIZE", 6) == 0){
                 
                 sscanf(m.data, "RESIZE %d %d", &bb.W, &bb.H);
@@ -173,8 +171,7 @@ int main(int argc, char *argv[]) {
                 if (strncmp(m.data, "RESET", 5) == 0){ 
                     
                     tmp_num_obs = 0;
-                    //receiving_obs = 1;
-                    printf("[BB] RESET obstacles ricevuto\n");
+                    LOG("Obstacles reset received");
                     continue;
                 } 
                 else if (strncmp(m.data, "NEW", 3) == 0){
@@ -242,12 +239,11 @@ int main(int argc, char *argv[]) {
                     }
                 }
             }
-            //from the targets
+            // Message from Targets (T)
             else if (m.src == IDX_T) {
                 if (strncmp(m.data, "RESET", 5) == 0) {
                     tmp_num_tgs = 0;
-                    //receiving_tgs = 1;
-                    printf("[BB] RESET targets ricevuto\n");
+                    LOG("Targets reset received");
                     continue;
                 }
                 else if (strncmp(m.data, "NEW", 3) == 0){
@@ -314,18 +310,18 @@ int main(int argc, char *argv[]) {
                                 write(fd_out, &map_msg, sizeof(map_msg));
                             }
 
-                            // Richiedi ridisegno target
+                            // Redraw targets
                             snprintf(map_msg.data, MSG_SIZE, "REDRAW_T");
                             write(fd_out, &map_msg, sizeof(map_msg));
                             LOG("Forwarding REDRAW_T to Map");
                             
-                            tmp_num_tgs = 1000; // Safe sentinel
+                            tmp_num_tgs = 1000; // Sentinel value
                         }
                     }
                 }
             }
 
-            //checking the distance between the drone and the obstacles
+            // Check distance between drone and obstacles
             for (int i = 0; i < bb.num_obs; i++){
                 int dx = (bb.drone_x - bb.obs_x[i]);
                 int dy = (bb.drone_y - bb.obs_y[i]);
@@ -337,21 +333,20 @@ int main(int argc, char *argv[]) {
 
                     snprintf(msg_f.data, MSG_SIZE, "OBS_POS= %d,%d", bb.obs_x[i], bb.obs_y[i]);
                     write(fd_out, &msg_f, sizeof(msg_f));
-                    LOG("sent OBS_POS near to Drone");
-                    //printf("OBSTACLE NEAR\n");
+                    LOG("Sent OBS_POS near to Drone");
                 }
             }
-            //checking the distance between the drone and the first target
+            // Check distance between drone and the current target
             if (bb.num_tgs > 0 && !waiting_reply) {
                 int dx = (bb.drone_x - bb.tgs_x[0]);
                 int dy = (bb.drone_y - bb.tgs_y[0]);
 
                 double dis = sqrt(dx*dx + dy*dy);
-                if (dis <= 1.0){ // Threshold 1.0
+                if (dis <= 1.0){ // Threshold reached
                     struct msg msg_t;
                     msg_t.src = IDX_B;
 
-                    // Shift Logic
+                    // Shift remaining targets
                     for (int i = 0; i < bb.num_tgs - 1; i++) {
                         bb.tgs_x[i] = bb.tgs_x[i + 1];
                         bb.tgs_y[i] = bb.tgs_y[i + 1];
@@ -365,7 +360,7 @@ int main(int argc, char *argv[]) {
                 }
             }
         }
-        //signal the watchdog
+        // Send alive signal to watchdog
         union sigval val;
         val.sival_int = time(NULL);
         

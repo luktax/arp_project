@@ -19,21 +19,21 @@
 
 
 struct params{
-    float M; //mass
-    float K; //viscous coeff
-    float T; //simulation time (sec)
-    float USER_FORCE; // user input force
-    float RHO;
-    float NI;
+    float M; // Mass
+    float K; // Viscous coefficient
+    float T; // Simulation time step (sec)
+    float USER_FORCE; // User input force scaling
+    float RHO; // Repulsive force range
+    float NI; // Repulsive force gain
 };
 
 struct drone{
-    int x; //position
-    int y;
-    float Fx; //resulting force x
-    float Fy; //resulting force y
-    float vx; //velocity x
-    float vy; //velocity y
+    int x; // Horizontal position
+    int y; // Vertical position
+    float Fx; // Resulting force (X)
+    float Fy; // Resulting force (Y)
+    float vx; // Velocity (X)
+    float vy; // Velocity (Y)
 };
 
 
@@ -49,7 +49,7 @@ int load_params(const char *filename, struct params *p){
         char key[64];
         float value;
 
-        //read the line with format %63[^=]: all character untill '=', saved in key, %f float saved in value
+        // Read the line with format %63[^=]: all characters until '=', saved in key, %f float saved in value
         if (sscanf(line, "%63[^=] = %f", key, &value) == 2){
             for(char *c = key; *c; c++) {
                 if (*c == ' ') *c = '\0';
@@ -69,16 +69,16 @@ int load_params(const char *filename, struct params *p){
 
 int main(int argc, char *argv[]) {
 
-    //write on the processes.log
+    // Register process for logging
     register_process("Drone");
-    LOG("process initialized");
+    LOG("Process initialized");
 
     int x, y;
     if (argc < 3) {
         fprintf(stderr, "Usage: %s <fd>\n", argv[0]);
         return 1;
     }
-    //drone initialization
+    // Drone initialization
     struct drone D;
     D.x = 5;
     D.y = 5;
@@ -87,13 +87,13 @@ int main(int argc, char *argv[]) {
     D.vx = 0;
     D.vy = 0;
 
-    // fd_in: read from father
+    // fd_in: read from parent/router
     int fd_in = atoi(argv[1]);
 
-    // fd_out: write to father
+    // fd_out: write to parent/router
     int fd_out = atoi(argv[2]);
 
-    // watchdog pid to send signals
+    // Watchdog PID to send alive signals
     pid_t watchdog_pid = atoi(argv[3]);
 
     float X = D.x;
@@ -109,7 +109,7 @@ int main(int argc, char *argv[]) {
     int flags = fcntl(fd_in, F_GETFL, 0);
     fcntl(fd_in, F_SETFL, flags | O_NONBLOCK);
 
-    //initial message for the position
+    // Initial message for the position
     struct msg out_msg;
     out_msg.src = IDX_D;
     snprintf(out_msg.data, MSG_SIZE, "%d,%d", D.x, D.y);
@@ -139,8 +139,8 @@ int main(int argc, char *argv[]) {
         
         x = D.x;
         y = D.y;
-        int dx = 0;
-        int dy = 0;
+        int dx = -100; // Large sentinel
+        int dy = -100; // Large sentinel
 
         while (1) {
             struct msg m;
@@ -164,7 +164,7 @@ int main(int argc, char *argv[]) {
                     LOG(log_msg);
                 }
             }
-            // Movimento
+            // Movement
             if (ch == 'w') D.Fy--;
             else if (ch == 'x') D.Fy++;
             else if (ch == 'a') D.Fx--;
@@ -178,13 +178,13 @@ int main(int argc, char *argv[]) {
                 flag_reset = 1; 
                 printf("RESET\n");
                 LOG("Reset command received");
-            } //reset
+            } // Reset
             else if (ch == 27) {
                 printf("[DRONE] EXIT\n");
                 LOG("Received ESC, shutting down");
                 running = 0; 
                 break;
-            } // ESC chiude tutto
+            } // ESC closes everything
 
             if (strncmp(m.data, "OBS_POS", 7)== 0){
                 sscanf(m.data, "OBS_POS= %d,%d", &dx, &dy);
@@ -199,7 +199,7 @@ int main(int argc, char *argv[]) {
         }
         
         if (!running) break;
-        //repulsive Force x and y from obstacles
+        // Repulsive Force x and y from obstacles
         float dist_x = X - dx;
         float dist_y = Y - dy;
         float dist = sqrt(dist_x*dist_x + dist_y*dist_y);
@@ -210,34 +210,34 @@ int main(int argc, char *argv[]) {
             Frep_y = params.NI * (1.0/dist - 1.0/params.RHO) * (dist_y / dist)*5;
         }
 
-        //repulsive Force x and y from the walls
-        //wall left
+        // Repulsive Force x and y from the walls
+        // Wall left
         dist_x = X;
         if (dist_x < params.RHO){ Frep_x += params.NI * (1.0/dist_x - 1.0/params.RHO)*(dist_x/dist_x);}
 
-        //wall right
+        // Wall right
         dist_x = abs(X - width);
         if (dist_x < params.RHO) {Frep_x -= params.NI * (1.0/dist_x - 1.0/params.RHO)*(dist_x/dist_x);}
 
-        //wall top
+        // Wall top
         dist_y = Y;
         if (dist_y < params.RHO) {Frep_y += params.NI * (1.0/dist_y - 1.0/params.RHO)*(dist_y/dist_y);}
 
-        //wall bottom
+        // Wall bottom
         dist_y = abs(Y- height);
         if (dist_y < params.RHO) {Frep_y -= params.NI * (1.0/dist_y - 1.0/params.RHO)*(dist_y/dist_y);}
 
         //printf("Repulsive force: %f, %f", Frep_x, Frep_y);
 
-        //viscous force x
+        // Viscous force X
         float Fvisc_x = params.K * D.vx;
 
-        //resulting Force x
+        // Resulting Force X
         float Fx_TOT = D.Fx * params.USER_FORCE - Fvisc_x + Frep_x;
         
-        //viscous force y
+        // Viscous force Y
         float Fvisc_y = params.K * D.vy;
-        //resulting Force y
+        // Resulting Force Y
         float Fy_TOT = D.Fy * params.USER_FORCE - Fvisc_y + Frep_y;
         
         {
@@ -246,11 +246,11 @@ int main(int argc, char *argv[]) {
             LOG(log_msg);
         }
 
-        //x position
+        // X position update
         float ax = Fx_TOT/params.M;
         D.vx = D.vx + ax * params.T;
         X = X + D.vx * params.T;
-        //y position
+        // Y position update
         float ay = Fy_TOT/params.M;
         D.vy = D.vy + ay * params.T;
         Y = Y + D.vy * params.T;
@@ -262,7 +262,7 @@ int main(int argc, char *argv[]) {
             snprintf(stats_msg.data, MSG_SIZE, "STATS %.2f %.2f %.2f %.2f %.2f %.2f", Fx_TOT, Fy_TOT, D.vx, D.vy, X, Y);
             write(fd_out, &stats_msg, sizeof(stats_msg));
         }
-        //update the position
+        // Update the discrete position
         D.x = (int)roundf(X);
         D.y = (int)roundf(Y);
 
@@ -285,7 +285,7 @@ int main(int argc, char *argv[]) {
                 LOG(log_msg);
             }
         }
-        //signals the watchdog
+        // Send alive signal to watchdog
         union sigval val;
         val.sival_int = time(NULL);
         

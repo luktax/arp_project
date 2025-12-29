@@ -16,7 +16,7 @@
 
 int main(int argc, char *argv[]) {
 
-    //write on the processes.log
+    // Register process for logging
     register_process("Targets");
     LOG("Process started");
 
@@ -27,7 +27,7 @@ int main(int argc, char *argv[]) {
 
     int fd_in = atoi(argv[1]);
     int fd_out = atoi(argv[2]);
-    // watchdog pid to send signals
+    // Watchdog PID to send alive signals
     pid_t watchdog_pid = atoi(argv[3]);
 
     fcntl(fd_in, F_SETFL, O_NONBLOCK);
@@ -53,7 +53,7 @@ int main(int argc, char *argv[]) {
                 if (strncmp(m.data, "RESIZE", 6)==0){
                     int newW, newH;
                     sscanf(m.data, "RESIZE %d %d", &newW, &newH);
-                    printf("[BB->T] RESIZE ricevuto %d, %d\n", W, H);
+                    //printf("[BB->T] RESIZE received %d, %d\n", W, H);
                     if (newW != W || newH != H){
                         W = newW;
                         H = newH;
@@ -86,7 +86,7 @@ int main(int argc, char *argv[]) {
                 snprintf(bb_msg.data, MSG_SIZE, "RESET"); 
                 write(fd_out, &bb_msg, sizeof(bb_msg)); 
                 reset_sent = 1;
-                printf("[T] RESET INVIATO\n");
+                //printf("[T] RESET SENT\n");
                 LOG("Window change detected, regenerating targets...");
             }
 
@@ -96,12 +96,12 @@ int main(int argc, char *argv[]) {
             snprintf(bb_msg.data, MSG_SIZE, "%d,%d", x, y);
             write(fd_out, &bb_msg, sizeof(bb_msg));
 
-            printf("[T] posizione target %d, %d\n", x, y);
+            //printf("[T] target position %d, %d\n", x, y);
         } else {
             reset_sent = 0;
         }
 
-        //signals the watchdog
+        // Send alive signal to watchdog
         union sigval val;
         val.sival_int = time(NULL);
         

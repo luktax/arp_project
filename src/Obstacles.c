@@ -16,7 +16,7 @@
 
 int main(int argc, char *argv[]) {
 
-    //write on the processes.log
+    // Register process for logging
     register_process("Obstacles");
     LOG("Process started");
 
@@ -27,7 +27,7 @@ int main(int argc, char *argv[]) {
 
     int fd_in = atoi(argv[1]); 
     int fd_out = atoi(argv[2]);
-    // watchdog pid to send signals
+    // Watchdog PID to send alive signals
     pid_t watchdog_pid = atoi(argv[3]);
 
     fcntl(fd_in, F_SETFL, O_NONBLOCK);
@@ -52,7 +52,7 @@ int main(int argc, char *argv[]) {
                 if (strncmp(m.data, "RESIZE", 6)==0){
                     int newW, newH; 
                     sscanf(m.data, "RESIZE %d %d", &newW, &newH); 
-                    printf("[BB->O] RESIZE ricevuto %d, %d\n", W, H); 
+                    //printf("[BB->O] RESIZE received %d, %d\n", W, H); 
                     if (newW != W || newH != H){ 
                         W = newW; 
                         H = newH; 
@@ -78,7 +78,7 @@ int main(int argc, char *argv[]) {
                 snprintf(bb_msg.data, MSG_SIZE, "RESET"); 
                 write(fd_out, &bb_msg, sizeof(bb_msg)); 
                 reset_sent = 1;
-                printf("[O] RESET INVIATO\n");
+                //printf("[O] RESET SENT\n");
                 LOG("Window change detected, regenerating obstacles...");
             }
             
@@ -103,7 +103,7 @@ int main(int argc, char *argv[]) {
             }
         } 
 
-        //signals the watchdog
+        // Send alive signal to watchdog
         union sigval val;
         val.sival_int = time(NULL);
         

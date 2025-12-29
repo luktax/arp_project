@@ -20,6 +20,9 @@
 
 int grabbed = 0;
 
+/**
+ * Redraw the main ncurses window and its borders.
+ */
 void draw_window(WINDOW *win){
     int H, W;
     getmaxyx(stdscr, H, W);
@@ -47,6 +50,9 @@ void draw_window(WINDOW *win){
     wrefresh(win);
 }
 
+/**
+ * Draw all game elements (obstacles, targets, and drone) in the main window.
+ */
 void draw_all(WINDOW *win, int obs_x[MAX_OBS], int obs_y[MAX_OBS], int num_obs, int tgs_x[MAX_OBS], int tgs_y[MAX_OBS], int num_tgs, int x, int y){
     werase(win);
     //draw_window(win);
@@ -80,7 +86,7 @@ void draw_all(WINDOW *win, int obs_x[MAX_OBS], int obs_y[MAX_OBS], int num_obs, 
 
 int main(int argc, char *argv[]) {
 
-    //write on the processes.log
+    // Register process for logging
     register_process("Map");
     LOG("Map process started");
 
@@ -93,7 +99,7 @@ int main(int argc, char *argv[]) {
 
     int flags = fcntl(fd_in, F_GETFL, 0);
     fcntl(fd_in, F_SETFL, flags | O_NONBLOCK);
-    // watchdog pid to send signals
+    // Watchdog PID to send alive signals
     pid_t watchdog_pid = atoi(argv[3]);
 
     setlocale(LC_ALL, "");
@@ -106,8 +112,8 @@ int main(int argc, char *argv[]) {
     keypad(stdscr, TRUE);
     nodelay(stdscr, TRUE);
 
-    // color definition
-    init_color(COLOR_YELLOW, 1000, 500, 0);   // orange
+    // Color pair definitions
+    init_color(COLOR_YELLOW, 1000, 500, 0);   // Orange
     init_pair(1, COLOR_BLUE,  -1);            
     init_pair(2, COLOR_YELLOW, -1);           
     init_pair(3, COLOR_WHITE, -1);
@@ -132,16 +138,17 @@ int main(int argc, char *argv[]) {
 
     LOG("Map initialized");
 
-    //obstacle
+    // Obstacles state
     int obs_x[MAX_OBS];
     int obs_y[MAX_OBS];
     int num_obs = 0;
-    //targets
+
+    // Targets state
     int tgs_x[MAX_OBS];
     int tgs_y[MAX_OBS];
     int num_tgs = 0;
-    //int expected_obs = (int)roundf(height*width/1000);
-    //flag for the redraw
+
+    // Redraw flags
     int ready_o = 0;
     int ready_t = 0;
 
@@ -149,7 +156,7 @@ int main(int argc, char *argv[]) {
 
     while(running){
         
-        //resize
+        // Resizing logic
         int ch = getch();
         if (ch == KEY_RESIZE){
 
@@ -176,10 +183,10 @@ int main(int argc, char *argv[]) {
             num_obs = 0;
             num_tgs = 0;  
 
-            //msg to notice the bb of the resize
+            // Message to notify Blackboard of the terminal resize
             struct msg mb;
             mb.src = IDX_M;
-            // Send Game Area size (Width - StatsWidth - Margins)
+            // Send game area dimensions (Width - Sidebar - Margins)
             snprintf(mb.data, MSG_SIZE, "RESIZE %d %d", width - STATS_WIDTH - 6, height - 6);
             write(fd_out, &mb, sizeof(mb));
 
@@ -195,7 +202,7 @@ int main(int argc, char *argv[]) {
             wrefresh(win_stats);
         }
 
-        //read the message
+        // Read incoming messages
         while(1){
             struct msg m;
             ssize_t n = read(fd_in, &m, sizeof(m));
@@ -222,7 +229,7 @@ int main(int argc, char *argv[]) {
                 mvwprintw(win_stats, 4, 1, "Force: %.2f, %.2f", fx, fy);
                 wrefresh(win_stats);
             }
-            //if it is an obstacle
+            // Obstacle update
             else if (m.src == IDX_B && strncmp(m.data, "O=", 2) == 0){
                 int o_x, o_y;
                 sscanf(m.data, "O=%d,%d", &o_x, &o_y);
@@ -232,7 +239,7 @@ int main(int argc, char *argv[]) {
                 //printf("[M] posizione ostacolo: %d,%d\n", o_x, o_y);
 
             }
-            //if it is a target
+            // Target update
             else if (m.src == IDX_B && strncmp(m.data, "T[", 2) == 0){
                 int t_i, t_x, t_y;
                 sscanf(m.data, "T[%d]=%d,%d", &t_i, &t_x, &t_y);
@@ -281,7 +288,7 @@ int main(int argc, char *argv[]) {
             else if (m.src == IDX_B && strncmp(m.data, "REDRAW_T", 8) == 0){
                 ready_t = 1;
             }
-            //if it is the drone
+            // Drone position update
             else if(m.src == IDX_B && strncmp(m.data, "D=", 2) == 0){
                 sscanf(m.data, "D=%d,%d", &x, &y);
             }
@@ -299,7 +306,7 @@ int main(int argc, char *argv[]) {
             LOG("Map redrawn");
         }
 
-        //signals the watchdog
+        // Send alive signal to watchdog
         union sigval val;
         val.sival_int = time(NULL);
         

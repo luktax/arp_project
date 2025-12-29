@@ -9,7 +9,7 @@
 #include <errno.h>
 #include <signal.h>
 
-//header file
+// Header files
 #include "../include/process_log.h"
 #define PROCESS_NAME "MAIN"
 #include "../include/common.h"
@@ -48,10 +48,10 @@ void handle_signal(int sig) {
 }
 
 
-int pipe_parent_to_child[NUM_PROCESSES][2]; //the child reads from [0], the father write on [1]
-int pipe_child_to_parent[NUM_PROCESSES][2]; //the father reads from [0], the child write on [1]
+int pipe_parent_to_child[NUM_PROCESSES][2]; // Child reads from [0], parent writes to [1]
+int pipe_child_to_parent[NUM_PROCESSES][2]; // Parent reads from [0], child writes to [1]
 
-//route table
+// Route table structure
 typedef struct{
     int num;
     int dest[NUM_PROCESSES];
@@ -68,7 +68,7 @@ int main(){
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
 
-    //pipe creation
+    // Pipe creation
     for (int i = 0; i < NUM_PROCESSES; i++) {
         if (pipe(pipe_parent_to_child[i]) == -1 ||
             pipe(pipe_child_to_parent[i]) == -1) {
@@ -87,10 +87,10 @@ int main(){
     char fd_pc[NUM_PROCESSES][16];
     char fd_cp[NUM_PROCESSES][16];
 
-    // string conversion
+    // String conversion for file descriptors
     for (int i = 0; i < NUM_PROCESSES; i++) {
-        sprintf(fd_pc[i], "%d", pipe_parent_to_child[i][0]); // lettura
-        sprintf(fd_cp[i], "%d", pipe_child_to_parent[i][1]); // scrittura
+        sprintf(fd_pc[i], "%d", pipe_parent_to_child[i][0]); // Reading end
+        sprintf(fd_cp[i], "%d", pipe_child_to_parent[i][1]); // Writing end
     }
 
     //WATCHDOG
@@ -173,8 +173,8 @@ int main(){
             }
         }
         
-        close(pipe_parent_to_child[IDX_I][1]); // non scrive su parent->child
-        close(pipe_child_to_parent[IDX_I][0]); // non legge da child->parent
+        close(pipe_parent_to_child[IDX_I][1]); // Keyboard doesn't write to parent->child
+        close(pipe_child_to_parent[IDX_I][0]); // Keyboard doesn't read from child->parent
 
         //
         execlp("konsole", "konsole", "--geometry", "300x600", "-e", "./build/I_Keyboard",
@@ -196,9 +196,8 @@ int main(){
             }
         }
         // 
-        close(pipe_parent_to_child[IDX_M][1]); // child non deve scrivere su p->c
-        close(pipe_child_to_parent[IDX_M][0]); // child non legge da c->p
-        //close(pipe_child_to_parent[IDX_M][1]); // child non scrive al padre
+        close(pipe_parent_to_child[IDX_M][1]); // Child doesn't write to parent->child
+        close(pipe_child_to_parent[IDX_M][0]); // Child doesn't read from child->parent
 
         execlp("konsole", "konsole", "--geometry", "1400x600", "-e", "./build/map", fd_pc[IDX_M], fd_cp[IDX_M], watchdog_pid, NULL);
         perror("execl konsole map");
@@ -248,11 +247,9 @@ int main(){
     }
     LOG("Targets fork");
 
-    // FATHER BLOCK
+    // PARENT PROCESS MAIN LOOP
     for (int i = 0; i < NUM_PROCESSES; i++) {
         close(pipe_parent_to_child[i][0]);
-        //close(pipe_parent_to_child[i][1]);
-        //close(pipe_child_to_parent[i][0]);
         close(pipe_child_to_parent[i][1]);
     }
 
@@ -278,16 +275,16 @@ int main(){
 
         int maxfd = -1;
 
-        // il padre deve monitorare tutti i read end dei child->parent
+        // The parent must monitor all read ends of child->parent pipes
         for (int i = 0; i < NUM_PROCESSES; i++) {
             int fd = pipe_child_to_parent[i][0];
-            if (fd >= 0){
+            if (fd >= 0) {
                 FD_SET(fd, &rfds);
                 if (fd > maxfd) maxfd = fd;
             }
         }
 
-        // aspetta un messaggio da QUALUNQUE figlio
+        // Wait for a message from ANY child
         int ret = select(maxfd + 1, &rfds, NULL, NULL, NULL);
         if (ret < 0) {
             perror("select");
@@ -295,7 +292,7 @@ int main(){
         }
 
         int esc_received = 0;
-        // verifica quale figlio ha inviato dati
+        // Check which child sent data
         for (int src = 0; src < NUM_PROCESSES; src++) {
             int read_fd = pipe_child_to_parent[src][0];
 
@@ -304,7 +301,7 @@ int main(){
                 int n = read(read_fd, &m, sizeof(m));
 
                 if (n <= 0) {
-                    // il figlio è terminato → chiudi solo il suo fd di lettura
+                    // Child terminated -> close its reading end
                     close(read_fd);
                     pipe_child_to_parent[src][0] = -1;
                     continue;
@@ -315,7 +312,7 @@ int main(){
                     esc_received = 1;
                 }
 
-                //destination from route_table
+                // Destination from route_table
                 for (int d = 0; d < route_table[src].num; d++) {
                     int dst = route_table[src].dest[d];
                     int write_fd = pipe_parent_to_child[dst][1];
