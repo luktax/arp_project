@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE
 #include <sys/select.h>
 #include <unistd.h>
 #include <sys/wait.h>
@@ -82,8 +83,6 @@ int main(){
     unlink("log/processes_pid.log");
     unlink("log/system.log");
 
-    unlink("log/system.log");
-
     char fd_pc[NUM_PROCESSES][16];
     char fd_cp[NUM_PROCESSES][16];
 
@@ -96,7 +95,6 @@ int main(){
     //WATCHDOG
     pid_W = fork();
     if (pid_W == 0) {
-        // 
         for (int i = 0; i < NUM_PROCESSES; i++) {
             if (i != IDX_W) {
                 close(pipe_parent_to_child[i][0]);
@@ -105,11 +103,9 @@ int main(){
                 close(pipe_child_to_parent[i][1]);
             }
         }
-
-        close(pipe_parent_to_child[IDX_W][1]);
-        close(pipe_child_to_parent[IDX_W][0]);
+        //
         execl("./build/Watchdog", "./build/Watchdog", fd_pc[IDX_W], fd_cp[IDX_W], NULL);
-        perror("execl targets");
+        perror("execl watchdog");
         exit(EXIT_FAILURE);
     }
     LOG("Watchdog fork");

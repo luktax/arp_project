@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE
 #include <signal.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -11,6 +12,7 @@
 #include "../include/process_log.h"
 #define PROCESS_NAME "WATCHDOG"
 #include "../include/common.h"
+
 
 typedef struct {
     pid_t pid;
@@ -36,7 +38,6 @@ void wait_for_all_processes(void) {
             char buf[256];
             while (fgets(buf, sizeof(buf), f))
                 lines++;
-                //printf("[WD] lines=%d\n", lines);
             fclose(f);
         }
         usleep(100000); // 100ms
@@ -96,7 +97,6 @@ void update_process(pid_t pid, int time){
 void signal_handler(int sig, siginfo_t *info, void *context){
    pid_t pid = info->si_pid;
    int time = info->si_value.sival_int;
-   //printf("heartbeat recived, pid: %d\n", pid);
    update_process(pid, time);
 }
 
@@ -147,7 +147,10 @@ void watchdog_log(){
 
 int main(int argc, char *argv[]) {
     watchdog_pid = getpid();
+    //register the process on the file
+    register_process("Watchdog");
     LOG("Watchdog process started");
+
     sigset_t block_set, old_set;
 
     // 1. Block SIGUSR1
@@ -161,15 +164,15 @@ int main(int argc, char *argv[]) {
         process_table[i].name[0] = '\0';
     }
 
-    // Register process for logging
-    register_process("Watchdog");
-    
-    printf("[WD] waiting for all processes...\n");
+    //wait for the list of process to be complete
     wait_for_all_processes();
+    //load all teh process to start monitoring
     load_process();
-    printf("[WD] All processes registered\n");
     LOG("All processes registered, starting monitoring");
-
+    printf("[WD] All processes registered, starting monitoring\n");
+    fflush(stdout);
+    
+    //signal handler definition
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_flags = SA_SIGINFO;
@@ -177,16 +180,16 @@ int main(int argc, char *argv[]) {
     sigemptyset(&sa.sa_mask);
     sigaction(SIGUSR1, &sa, NULL);
 
-    // 6. activate SIGUSR1
     sigprocmask(SIG_SETMASK, &old_set, NULL);
 
     struct timespec last_log_time;
     clock_gettime(CLOCK_MONOTONIC, &last_log_time);
 
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s <fd>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <read_fd> <write_fd>\n", argv[0]);
         return 1;
     }
+
     // fd_in: read from parent/router
     int fd_in = atoi(argv[1]);
     fcntl(fd_in, F_SETFL, O_NONBLOCK);
@@ -194,17 +197,15 @@ int main(int argc, char *argv[]) {
     while (1) {
         time_t now = time(NULL);
 
+        //check if all the process are alive
         for (int i = 0; i < NUM_PROCESSES; i++){
             if(now - process_table[i].last_signal > TIMEOUT){
                 if (process_table[i].alive){
-                    printf("ALERT: process %s (PID %d) not responding!\n",
-                            process_table[i].name, process_table[i].pid);
+                    // Log the timeout
+                    char log_msg[82];
+                    snprintf(log_msg, sizeof(log_msg), "Alert: Process %s (PID %d) not responding!", process_table[i].name, process_table[i].pid);
+                    LOG(log_msg);
                     process_table[i].alive = 0;
-                    {
-                        char log_msg[64];
-                        snprintf(log_msg, sizeof(log_msg), "Process %s (PID %d) not responding!", process_table[i].name, process_table[i].pid);
-                        LOG(log_msg);
-                    }
                 }
             } else {
                 process_table[i].alive = 1;
@@ -221,6 +222,7 @@ int main(int argc, char *argv[]) {
             last_log_time = curr_time;
         }
 
+        //terminate the execution if the user pressed ESC
         struct msg m;
         ssize_t n = read(fd_in, &m, sizeof(m));
         if(n > 0){
