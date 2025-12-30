@@ -7,6 +7,7 @@ set -e
 
 # Creazione cartella build
 mkdir -p build
+mkdir -p log
 
 # Entra in build
 cd build

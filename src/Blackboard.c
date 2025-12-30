@@ -336,6 +336,11 @@ int main(int argc, char *argv[]) {
                     LOG("Sent OBS_POS near to Drone");
                 }
             }
+
+            // ---------------------------------------------------------------------------------------------------
+            // Logic to check the distance between drone and the first target: correction of "impossible grab goal"
+            // ---------------------------------------------------------------------------------------------------
+
             // Check distance between drone and the current target
             if (bb.num_tgs > 0 && !waiting_reply) {
                 int dx = (bb.drone_x - bb.tgs_x[0]);
