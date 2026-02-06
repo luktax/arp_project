@@ -145,6 +145,11 @@ int main(int argc, char *argv[]) {
         while (1) {
             struct msg m;
             ssize_t n = read(fd_in, &m, sizeof(m));
+            if (n > 0) {
+                 char dbg[64];
+                 snprintf(dbg, sizeof(dbg), "DEBUG: Drone received msg: %c (src=%d)", m.data[0], m.src);
+                 LOG(dbg);
+            }
             if (n < 0) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
                     break; // No more messages in pipe
@@ -168,7 +173,7 @@ int main(int argc, char *argv[]) {
             if (ch == 'w') D.Fy--;
             else if (ch == 'x') D.Fy++;
             else if (ch == 'a') D.Fx--;
-            else if (ch == 'd') D.Fx++;
+            else if (ch == 'd') {D.Fx++; LOG("received d");}
             else if (ch == 'e') { D.Fx++; D.Fy--; }
             else if (ch == 'c') { D.Fx++; D.Fy++; }
             else if (ch == 'q') { D.Fx--; D.Fy--; }
@@ -239,12 +244,6 @@ int main(int argc, char *argv[]) {
         float Fvisc_y = params.K * D.vy;
         // Resulting Force Y
         float Fy_TOT = D.Fy * params.USER_FORCE - Fvisc_y + Frep_y;
-        
-        {
-            char log_msg[128];
-            snprintf(log_msg, sizeof(log_msg), "Dynamics updated: Fx=%.2f, Fy=%.2f", Fx_TOT, Fy_TOT);
-            LOG(log_msg);
-        }
 
         // X position update
         float ax = Fx_TOT/params.M;
@@ -254,13 +253,20 @@ int main(int argc, char *argv[]) {
         float ay = Fy_TOT/params.M;
         D.vy = D.vy + ay * params.T;
         Y = Y + D.vy * params.T;
+
+        // Zero out small velocities to prevent jitter
+        if (fabs(D.vx) < 0.01) D.vx = 0;
+        if (fabs(D.vy) < 0.01) D.vy = 0;
         
         // Send STATS to Blackboard for Diagnostics
-        {
+        // Send STATS to Blackboard for Diagnostics (Reduced frequency)
+        static int stats_count = 0;
+        if (stats_count++ % 10 == 0) {
             struct msg stats_msg;
             stats_msg.src = IDX_D;
             snprintf(stats_msg.data, MSG_SIZE, "STATS %.2f %.2f %.2f %.2f %.2f %.2f", Fx_TOT, Fy_TOT, D.vx, D.vy, X, Y);
             write(fd_out, &stats_msg, sizeof(stats_msg));
+            LOG("stats_msg.data");
         }
         // Update the discrete position
         D.x = (int)roundf(X);
@@ -290,7 +296,9 @@ int main(int argc, char *argv[]) {
         val.sival_int = time(NULL);
         
         //printf("[D] signals: IM ALIVE\n");
-        sigqueue(watchdog_pid, SIGUSR1, val);
+        if (watchdog_pid > 0) {
+            sigqueue(watchdog_pid, SIGUSR1, val);
+        }
 
         usleep(params.T * 1e6);
     }

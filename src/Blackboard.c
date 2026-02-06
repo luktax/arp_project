@@ -72,6 +72,14 @@ int main(int argc, char *argv[]) {
     // Watchdog PID to send alive signals
     pid_t watchdog_pid = atoi(argv[3]);
     
+    // Mode (0=STANDALONE, 1=SERVER, 2=CLIENT)
+    int mode = (argc >= 5) ? atoi(argv[4]) : 0;
+    {
+        char blog[128];
+        snprintf(blog, sizeof(blog), "DEBUG: Blackboard started, fd_in=%d, fd_out=%d, mode=%d", fd_in, fd_out, mode);
+        LOG(blog);
+    }
+    
     struct blackboard bb = {0, 0, {0}, {0}, 0, {0}, {0}, 0, 155, 30, 1};
     int expected_obs = (int)roundf(bb.H*bb.W/1000);
     int expected_tgs = (int)roundf(bb.H*bb.W/1000);
@@ -96,12 +104,25 @@ int main(int argc, char *argv[]) {
             // Read incoming message
             struct msg m;
             ssize_t n = read(fd_in, &m, sizeof(m));
+            
+            if (mode != 0 && n > 0) {  // Debug log in server/client mode
+                char log_buf[80];
+                snprintf(log_buf, sizeof(log_buf), "DEBUG: BB read %ld bytes, src=%d, byte0=%d", n, m.src, (int)m.data[0]);
+                LOG(log_buf);
+            }
 
             // Message from Keyboard (I)
             if (m.src == IDX_I) {
+                if (mode != 0) {  // Only log in server/client mode
+                    char log_buf[80];
+                    snprintf(log_buf, sizeof(log_buf), "DEBUG: BB received Keyboard msg, key=%c", m.data[0]);
+                    LOG(log_buf);
+                }
                 // Forward the message to the drone
                 if (write(fd_out, &m, sizeof(m)) < 0) {
                     perror("write to drone via router");
+                } else if (mode != 0) {
+                    LOG("DEBUG: BB forwarded Keyboard msg to Drone");
                 }
                 // ESC 
                 if (m.data[0] == 27){
@@ -140,6 +161,12 @@ int main(int argc, char *argv[]) {
                     if(write(fd_out, &map_msg, sizeof(map_msg)) < 0){
                         perror("write to map via router");
                     }
+                    if (mode == SERVER){
+                        snprintf(map_msg.data, MSG_SIZE, "REMOTE %d,%d", bb.drone_x,bb.drone_y); 
+                        if(write(fd_out, &map_msg, sizeof(map_msg)) < 0){
+                            perror("write to remote via router");
+                    }
+                    }
                 }
             }
             // Message from Map (M)
@@ -168,6 +195,16 @@ int main(int argc, char *argv[]) {
             }
             //from the obstacles 
             else if(m.src == IDX_O){ 
+                if (mode == SERVER && strncmp(m.data, "O=", 2) == 0) {
+                    struct msg map_msg = m;
+                    map_msg.src = IDX_B;
+                    write(fd_out, &map_msg, sizeof(map_msg));
+                    LOG("SERVER: Forwarded single obstacle to Map");
+                    sscanf(m.data, "O=%d,%d", &bb.obs_x[0], &bb.obs_y[0]);
+                    continue;
+
+
+                }
                 if (strncmp(m.data, "RESET", 5) == 0){ 
                     
                     tmp_num_obs = 0;
@@ -371,7 +408,8 @@ int main(int argc, char *argv[]) {
         
         //printf("[BB] signals: IM ALIVE\n");
         sigqueue(watchdog_pid, SIGUSR1, val);
-        usleep(50000); 
+        if (mode != 0) usleep(10000);
+        else usleep(50000); 
     }
     
     close(fd_in);
