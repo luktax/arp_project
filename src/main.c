@@ -618,7 +618,6 @@ int main(){
                 char sbuf[128];
                 memset(sbuf, 0, sizeof(sbuf));
                 if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
-                    LOG_NW("CLIENT", "Received", sbuf);
                     if (strncmp(sbuf, "q", 1) == 0) {
                         LOG("CLIENT: Received exit command 'q'");
                         snprintf(sbuf, sizeof(sbuf), "qok");
@@ -636,8 +635,7 @@ int main(){
                                 // Send dok
                                 snprintf(sbuf, sizeof(sbuf), "dok");
                                 write(network_fd, sbuf, strlen(sbuf) + 1);
-                                LOG_NW("CLIENT", "Sent", sbuf);
-
+                                LOG("NETWORK (CLIENT): Received 'dok' from server");
                                 // Forward to local Blackboard as REMOTE
                                 struct msg m_remote;
                                 m_remote.src = IDX_O; // Act as remote source
@@ -656,9 +654,8 @@ int main(){
                         // Wait for pok
                         memset(sbuf, 0, sizeof(sbuf));
                         if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
-                            LOG("NETWORK (CLIENT): Received 'pok' from server");
                             if (strncmp(sbuf, "pok", 3) == 0) {
-                                // OK
+                                LOG("NETWORK (CLIENT): Received 'pok' from server");
                             }
                         }
                     }
@@ -680,7 +677,7 @@ int main(){
                     char sbuf[128];
                     memset(sbuf, 0, sizeof(sbuf));
                     if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
-                        LOG("NETWORK (SERVER): Received obstacle position from client");
+                        //LOG("NETWORK (SERVER): Received obstacle position from client");
                         int ox, oy;
                         if (sscanf(sbuf, "%d, %d", &ox, &oy) == 2) {
                         LOG("NETWORK (SERVER): Valid obstacle position received");
@@ -803,11 +800,6 @@ int main(){
                         int write_fd = pipe_parent_to_child[dst][1];
                         if (write_fd != -1){
                             write(write_fd, &m, sizeof(m));
-                            if (mode != 0) {
-                                char log_ipc[80];
-                                snprintf(log_ipc, sizeof(log_ipc), "ROUTER: Forwarding [%d -> %d] data: %s", src, dst, m.data);
-                                LOG(log_ipc);
-                            }
                         }
                     }
                 }
