@@ -148,24 +148,19 @@ int main(int argc, char *argv[]) {
                 } else {
                     // Assume it's a position update
                     sscanf(m.data, "%d,%d", &bb.drone_x, &bb.drone_y);
+                    /* Silence high-frequency log
                     {
                         char log_msg[64];
                         snprintf(log_msg, sizeof(log_msg), "Received drone position: %d,%d", bb.drone_x, bb.drone_y);
                         LOG(log_msg);
                     } 
-                    //printf("[D->BB] Ricevuto codice: %s\n", m.data);
+                    */
 
                     struct msg map_msg;
                     map_msg.src = IDX_B;
                     snprintf(map_msg.data, MSG_SIZE, "D=%d,%d", bb.drone_x,bb.drone_y); 
                     if(write(fd_out, &map_msg, sizeof(map_msg)) < 0){
                         perror("write to map via router");
-                    }
-                    if (mode == SERVER){
-                        snprintf(map_msg.data, MSG_SIZE, "REMOTE %d,%d", bb.drone_x,bb.drone_y); 
-                        if(write(fd_out, &map_msg, sizeof(map_msg)) < 0){
-                            perror("write to remote via router");
-                    }
                     }
                 }
             }
@@ -193,13 +188,27 @@ int main(int argc, char *argv[]) {
                     perror("write to obstacles and targets via router");
                 }  
             }
-            //from the obstacles 
+            //from the obstacles / remote drone
             else if(m.src == IDX_O){ 
+                // Client mode: receiving server's drone position as REMOTE
+                if (mode == CLIENT && strncmp(m.data, "REMOTE", 6) == 0) {
+                    int rx, ry;
+                    if (sscanf(m.data, "REMOTE %d, %d", &rx, &ry) == 2) {
+                        struct msg map_msg;
+                        map_msg.src = IDX_B;
+                        snprintf(map_msg.data, MSG_SIZE, "O=%d,%d", rx, ry);
+                        write(fd_out, &map_msg, sizeof(map_msg));
+                        
+                        bb.obs_x[0] = rx;
+                        bb.obs_y[0] = ry;
+                    }
+                    continue;
+                }
                 if (mode == SERVER && strncmp(m.data, "O=", 2) == 0) {
                     struct msg map_msg = m;
                     map_msg.src = IDX_B;
                     write(fd_out, &map_msg, sizeof(map_msg));
-                    LOG("SERVER: Forwarded single obstacle to Map");
+                    // LOG("SERVER: Forwarded single obstacle to Map");
                     sscanf(m.data, "O=%d,%d", &bb.obs_x[0], &bb.obs_y[0]);
                     continue;
 
@@ -241,11 +250,13 @@ int main(int argc, char *argv[]) {
                     tmp_obs_x[tmp_num_obs] = x;
                     tmp_obs_y[tmp_num_obs] = y;
                     tmp_num_obs++;
+                    /*
                     {
                         char log_msg[64];
                         snprintf(log_msg, sizeof(log_msg), "Received Obstacle at %d,%d", x, y);
                         LOG(log_msg);
                     }
+                    */
                     //printf("[BB] obstacle position: %d,%d; n%d\n", x, y, tmp_num_obs);
                     
                     if (tmp_num_obs == expected_obs){
