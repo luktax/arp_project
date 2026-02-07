@@ -99,15 +99,16 @@ int main(int argc, char *argv[]) {
     float X = D.x;
     float Y = D.y;
 
+    // Set input pipe to non-blocking to ensure physics keeps running
+    int flags = fcntl(fd_in, F_GETFL, 0);
+    fcntl(fd_in, F_SETFL, flags | O_NONBLOCK);
+
     //map
     int height = 30;
     int width = 155;
 
     int flag_reset = 0;
     int running = 1;
-
-    int flags = fcntl(fd_in, F_GETFL, 0);
-    fcntl(fd_in, F_SETFL, flags | O_NONBLOCK);
 
     // Initial message for the position
     struct msg out_msg;
@@ -183,7 +184,7 @@ int main(int argc, char *argv[]) {
             if (ch == 'w') D.Fy--;
             else if (ch == 'x') D.Fy++;
             else if (ch == 'a') D.Fx--;
-            else if (ch == 'd') {D.Fx++; LOG("received d");}
+            else if (ch == 'd') {D.Fx++;}
             else if (ch == 'e') { D.Fx++; D.Fy--; }
             else if (ch == 'c') { D.Fx++; D.Fy++; }
             else if (ch == 'q') { D.Fx--; D.Fy--; }
@@ -295,11 +296,12 @@ int main(int argc, char *argv[]) {
             if (write(fd_out, &out_msg, sizeof(out_msg)) < 0) {
                 perror("write to router");
             }
-            {
-                char log_msg[64];
-                snprintf(log_msg, sizeof(log_msg), "DRONE: Sent position [%d,%d] to router", D.x, D.y);
-                LOG(log_msg);
-            }
+            /*
+            char log_msg[64];
+            snprintf(log_msg, sizeof(log_msg), "Drone moved to %d,%d", D.x, D.y);
+            LOG(log_msg);
+            */
+
         }
         // Send alive signal to watchdog
         union sigval val;
