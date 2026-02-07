@@ -10,7 +10,7 @@
 // Default port for network communication
 #define DEFAULT_PORT 8080
 //#define HOST_NAME "localhost"
-#//define HOST_NAME "130.251.107.95" // MICHELE 
+//#define HOST_NAME "130.251.107.95" // MICHELE 
 #define HOST_NAME "172.30.228.47" // PC TAX
 
 // Process indices
@@ -23,6 +23,11 @@ enum {
     IDX_T,     // Targets
     IDX_W      // Watchdog
 };
+
+// UI Layout constants
+#define STATS_WIDTH 35
+#define MARGIN_X 6
+#define MARGIN_Y 6
 
 // Message structure for pipe communication
 struct msg {

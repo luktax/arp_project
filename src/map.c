@@ -15,10 +15,6 @@
 #define PROCESS_NAME "MAP"
 #include "../include/common.h"
 
-#define MAX_OBS 100
-
-#define STATS_WIDTH 35
-
 int grabbed = 0;
 int height, width;
 
@@ -26,21 +22,27 @@ int height, width;
  * Redraw the main ncurses window and its borders.
  */
 void draw_window(WINDOW *win){
-    int H, W;
-    getmaxyx(stdscr, H, W);
+    int wh, ww;
+    int m_x, m_y;
 
-    height = H;
-    width = W;
+    if (mode == STANDALONE) {
+        getmaxyx(stdscr, height, width);
+        // Original standalone logic: margins of 3
+        m_x = 6;
+        m_y = 6;
+    } else {
+        // Network modes: fixed margins
+        m_x = MARGIN_X;
+        m_y = MARGIN_Y;
+    }
 
-    int margin = 3;
-
-    int wh = H - 2 * margin;
-    int ww = W - 2 * margin - STATS_WIDTH; // Reserve space for sidebar
+    wh = height - m_y;
+    ww = width - m_x - STATS_WIDTH;
     if (wh < 3) wh = 3;
     if (ww < 3) ww = 3;
     
     wresize(win, wh, ww);
-    mvwin(win, margin, margin);
+    mvwin(win, m_y / 2, m_x / 2);
 
     werase(stdscr);
     werase(win);
@@ -127,11 +129,14 @@ int main(int argc, char *argv[]) {
     init_pair(3, COLOR_WHITE, -1);
     init_pair(4, COLOR_GREEN, -1);
 
-    // If initial dimensions are passed as arguments (Client mode)
-    if (argc >= 7) {
-        width = atoi(argv[5]) + STATS_WIDTH + 6;
-        height = atoi(argv[6]) + 6;
-        LOG("Initial dimensions from command line used");
+    // Initial dimensions: use arguments ONLY for network modes
+    if (mode != STANDALONE && argc >= 7) {
+        width = atoi(argv[5]) + STATS_WIDTH + MARGIN_X;
+        height = atoi(argv[6]) + MARGIN_Y;
+        LOG("Initial dimensions from command line used (Network mode)");
+    } else {
+        getmaxyx(stdscr, height, width);
+        LOG("Initial dimensions from terminal used (Standalone mode)");
     }
 
     WINDOW *win_main = newwin(1, 1, 0, 0);
@@ -144,13 +149,12 @@ int main(int argc, char *argv[]) {
     // Initial message to notify Blackboard of the terminal dimension
     struct msg mb_init;
     mb_init.src = IDX_M;
-    snprintf(mb_init.data, MSG_SIZE, "RESIZE %d %d", width - STATS_WIDTH - 6, height - 6);
+    snprintf(mb_init.data, MSG_SIZE, "RESIZE %d %d", width - STATS_WIDTH - MARGIN_X, height - MARGIN_Y);
     write(fd_out, &mb_init, sizeof(mb_init));
     
-    // Stats window placement: Right side
-    int W_scr, H_scr;
-    getmaxyx(stdscr, H_scr, W_scr);
-    WINDOW *win_stats = newwin(H_scr - 6, STATS_WIDTH - 2, 3, W_scr - STATS_WIDTH); 
+    // Stats window placement
+    int m_y = (mode == STANDALONE) ? 6 : MARGIN_Y;
+    WINDOW *win_stats = newwin(height - m_y, STATS_WIDTH - 2, m_y / 2, width - STATS_WIDTH); 
     box(win_stats, 0, 0);
     wrefresh(win_stats);
 
@@ -205,7 +209,7 @@ int main(int argc, char *argv[]) {
             struct msg mb;
             mb.src = IDX_M;
             // Send game area dimensions (Width - Sidebar - Margins)
-            snprintf(mb.data, MSG_SIZE, "RESIZE %d %d", width - STATS_WIDTH - 6, height - 6);
+            snprintf(mb.data, MSG_SIZE, "RESIZE %d %d", width - STATS_WIDTH - MARGIN_X, height - MARGIN_Y);
             write(fd_out, &mb, sizeof(mb));
 
             ready_o = 0;
@@ -214,8 +218,8 @@ int main(int argc, char *argv[]) {
             draw_window(win_main);
             
             // Redraw stats window at correct position
-            wresize(win_stats, height - 6, STATS_WIDTH - 2);
-            mvwin(win_stats, 3, width - STATS_WIDTH);
+            wresize(win_stats, height - MARGIN_Y, STATS_WIDTH - 2);
+            mvwin(win_stats, MARGIN_Y / 2, width - STATS_WIDTH);
             box(win_stats, 0, 0);
             wrefresh(win_stats);
         }
