@@ -142,6 +142,7 @@ int main(int argc, char *argv[]) {
         int dx = -100; // Large sentinel
         int dy = -100; // Large sentinel
 
+        int last_ch_in_burst = -1;
         while (1) {
             struct msg m;
             ssize_t n = read(fd_in, &m, sizeof(m));
@@ -160,6 +161,15 @@ int main(int argc, char *argv[]) {
             if (n == 0) break; // EOF
 
             int ch = (m.data[0]);
+            
+            // Dynamics Stabilization: Skip redundant movement keys in a single burst
+            // (e.g., multiple 'w' keys arriving in one select wake-up after network lag)
+            if (ch == last_ch_in_burst && (ch == 'w' || ch == 'x' || ch == 'a' || ch == 'd' || 
+                                          ch == 'e' || ch == 'c' || ch == 'q' || ch == 'z')) {
+                continue;
+            }
+            last_ch_in_burst = ch;
+
             if (strncmp(m.data, "RESIZE", 6)== 0){
                 ch = 'r';
                 sscanf(m.data, "RESIZE %d %d", &width, &height);
