@@ -127,7 +127,7 @@ int main(int argc, char *argv[]) {
             snprintf(m.data, MSG_SIZE, "%c", ch);
             {
                 char log_msg[64];
-                snprintf(log_msg, sizeof(log_msg), "Key pressed: %c", ch);
+                snprintf(log_msg, sizeof(log_msg), "KEYBOARD: Sent key '%c' to router", ch);
                 LOG(log_msg);
             }
 

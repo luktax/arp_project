@@ -148,7 +148,7 @@ int main(int argc, char *argv[]) {
             ssize_t n = read(fd_in, &m, sizeof(m));
             if (n > 0) {
                  char dbg[64];
-                 snprintf(dbg, sizeof(dbg), "DEBUG: Drone received msg: %c (src=%d)", m.data[0], m.src);
+                 snprintf(dbg, sizeof(dbg), "DRONE: Received key '%c' from router (src=%d)", m.data[0], m.src);
                  LOG(dbg);
             }
             if (n < 0) {
@@ -297,7 +297,7 @@ int main(int argc, char *argv[]) {
             }
             {
                 char log_msg[64];
-                snprintf(log_msg, sizeof(log_msg), "Drone position sent: %d,%d", D.x, D.y);
+                snprintf(log_msg, sizeof(log_msg), "DRONE: Sent position [%d,%d] to router", D.x, D.y);
                 LOG(log_msg);
             }
         }

@@ -19,7 +19,7 @@
 #include <time.h>
 
 #define DRONE_SYNC_MS 100
-#define OBST_SYNC_MS 200
+#define OBST_SYNC_MS 50
 
 // Header files
 #include "../include/process_log.h"
@@ -585,7 +585,8 @@ int main(){
         static unsigned long last_drone_ms = 0;
         static unsigned long last_obst_ms = 0;
 
-        while(1){
+        int running = 1;
+        while(running){
             fd_set rfds;
             FD_ZERO(&rfds);
             int maxfd = -1;
@@ -617,13 +618,14 @@ int main(){
                 char sbuf[128];
                 memset(sbuf, 0, sizeof(sbuf));
                 if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
+                    LOG_NW("CLIENT", "Received", sbuf);
                     if (strncmp(sbuf, "q", 1) == 0) {
                         LOG("CLIENT: Received exit command 'q'");
                         snprintf(sbuf, sizeof(sbuf), "qok");
                         write(network_fd, sbuf, strlen(sbuf) + 1);
                         LOG("MAIN (CLIENT): Cleaning up children...");
                         clean_children();
-                        break; // Exit loop to waitpid
+                        running = 0;
                     }
                     else if (strncmp(sbuf, "drone", 5) == 0) {
                         // Server drone position update
@@ -634,6 +636,7 @@ int main(){
                                 // Send dok
                                 snprintf(sbuf, sizeof(sbuf), "dok");
                                 write(network_fd, sbuf, strlen(sbuf) + 1);
+                                LOG_NW("CLIENT", "Sent", sbuf);
 
                                 // Forward to local Blackboard as REMOTE
                                 struct msg m_remote;
@@ -644,13 +647,16 @@ int main(){
                         }
                     }
                     else if (strncmp(sbuf, "obst", 4) == 0) {
+                        LOG("NETWORK (CLIENT): Received 'obst' request from server");
                         // Server asking for Client's drone position (obst)
                         snprintf(sbuf, sizeof(sbuf), "%d, %d", local_drone_x, local_drone_y);
                         write(network_fd, sbuf, strlen(sbuf) + 1);
+                        LOG("NETWORK (CLIENT): Sent local drone position to server");
                         
                         // Wait for pok
                         memset(sbuf, 0, sizeof(sbuf));
                         if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
+                            LOG("NETWORK (CLIENT): Received 'pok' from server");
                             if (strncmp(sbuf, "pok", 3) == 0) {
                                 // OK
                             }
@@ -669,14 +675,15 @@ int main(){
                 if (current_ms - last_obst_ms >= OBST_SYNC_MS) {
                     char remote_msg[100] = "obst";
                     write(network_fd, &remote_msg, strlen(remote_msg)+1);
-                LOG("SERVER: sent obst");
+                    LOG("NETWORK (SERVER): Sent 'obst' request to client");
                 // Wait for obst position
                     char sbuf[128];
                     memset(sbuf, 0, sizeof(sbuf));
                     if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
+                        LOG("NETWORK (SERVER): Received obstacle position from client");
                         int ox, oy;
                         if (sscanf(sbuf, "%d, %d", &ox, &oy) == 2) {
-                        LOG("SERVER: Received obstacle from client");
+                        LOG("NETWORK (SERVER): Valid obstacle position received");
                         
                         // Forward to Blackboard
                             struct msg m_obst;
@@ -687,7 +694,7 @@ int main(){
                         // Send pok
                             snprintf(remote_msg, sizeof(remote_msg), "pok");
                             write(network_fd, &remote_msg, strlen(remote_msg)+1);
-                            LOG("SERVER: sent pok");
+                            LOG("NETWORK (SERVER): Sent 'pok' to client");
                         }
                     }
                     last_obst_ms = current_ms;
@@ -697,8 +704,11 @@ int main(){
                 if (server_drone_dirty && (current_ms - last_drone_ms >= DRONE_SYNC_MS)) {
                     char remote_msg[100] = "drone";
                     write(network_fd, &remote_msg, strlen(remote_msg)+1);
+                    LOG("NETWORK (SERVER): Sent 'drone' command to client");
+                    
                     snprintf(remote_msg, sizeof(remote_msg), "%d, %d", server_drone_x, server_drone_y);
                     write(network_fd, &remote_msg, strlen(remote_msg)+1);
+                    LOG("NETWORK (SERVER): Sent server drone position to client");
                     
                     // Wait for dok
                     char sbuf[128];
@@ -765,7 +775,7 @@ int main(){
                         }
                         LOG("MAIN: ESC detected, cleaning up...");
                         clean_children();
-                        break; // Break the main while(1) loop
+                        running = 0;
                     }
 
                     // Targeted Routing for Blackboard (IDX_B)
@@ -793,6 +803,11 @@ int main(){
                         int write_fd = pipe_parent_to_child[dst][1];
                         if (write_fd != -1){
                             write(write_fd, &m, sizeof(m));
+                            if (mode != 0) {
+                                char log_ipc[80];
+                                snprintf(log_ipc, sizeof(log_ipc), "ROUTER: Forwarding [%d -> %d] data: %s", src, dst, m.data);
+                                LOG(log_ipc);
+                            }
                         }
                     }
                 }

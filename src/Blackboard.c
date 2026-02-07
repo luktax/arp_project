@@ -127,7 +127,7 @@ int main(int argc, char *argv[]) {
                 if (write(fd_out, &m, sizeof(m)) < 0) {
                     perror("write to drone via router");
                 } else if (mode != 0) {
-                    LOG("DEBUG: BB forwarded Keyboard msg to Drone");
+                    LOG("BLACKBOARD: Forwarded Keyboard msg to Drone");
                 }
                 // ESC 
                 if (m.data[0] == 27){
@@ -166,6 +166,10 @@ int main(int argc, char *argv[]) {
                     snprintf(map_msg.data, MSG_SIZE, "D=%d,%d", bb.drone_x,bb.drone_y); 
                     if(write(fd_out, &map_msg, sizeof(map_msg)) < 0){
                         perror("write to map via router");
+                    } else if (mode != 0) {
+                        char log_pos[64];
+                        snprintf(log_pos, sizeof(log_pos), "BLACKBOARD: Received pos [%d,%d] from Drone, forwarded to Map", bb.drone_x, bb.drone_y);
+                        LOG(log_pos);
                     }
                 }
             }
