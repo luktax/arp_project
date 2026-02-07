@@ -221,7 +221,13 @@ int main(){
             exit(EXIT_FAILURE);
         }
     }
-    LOG("Pipe created");
+    LOG("Pipes created");
+
+    // Set parent read ends to non-blocking to allow aggressive draining
+    for (int i = 0; i < NUM_PROCESSES; i++) {
+        int flags = fcntl(pipe_child_to_parent[i][0], F_GETFL, 0);
+        fcntl(pipe_child_to_parent[i][0], F_SETFL, flags | O_NONBLOCK);
+    }
 
     char fd_pc[NUM_PROCESSES][16];
     char fd_cp[NUM_PROCESSES][16];
@@ -723,83 +729,87 @@ int main(){
             for (int src = 0; src < NUM_PROCESSES; src++) {
                 int read_fd = pipe_child_to_parent[src][0];
 
-                if (FD_ISSET(read_fd, &rfds)) {
+                if (read_fd != -1 && FD_ISSET(read_fd, &rfds)) {
                     struct msg m;
-                    int n = read(read_fd, &m, sizeof(m));
-
-                    if (n <= 0) {
-                        // Child terminated -> close its reading end
-                        close(read_fd);
-                        pipe_child_to_parent[src][0] = -1;
-                        continue;
-                    }
-
-                    // Handshake: size -> sok (Server side)
-                    if (mode == SERVER && !size_sent && m.src == IDX_M && strncmp(m.data, "RESIZE", 6) == 0) {
-                        int w, h;
-                        sscanf(m.data, "RESIZE %d %d", &w, &h);
-                        char sbuf[128];
-                        memset(sbuf, 0, sizeof(sbuf));
-                        snprintf(sbuf, sizeof(sbuf), "size %d,%d", w, h);
-                        LOG("SERVER: Sending window size to client...");
-                        write(network_fd, sbuf, strlen(sbuf)+1);
-
-                        // Wait for sok
-                        memset(sbuf, 0, sizeof(sbuf));
-                        if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
-                            if (strncmp(sbuf, "sok", 3) == 0) {
-                                LOG("SERVER: Received 'sok' from client");
-                                size_sent = 1;
-                            }
+                    // Drain the pipe loop to recover from network stalls
+                    while (1) {
+                        ssize_t n = read(read_fd, &m, sizeof(m));
+                        if (n <= 0) {
+                            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) break; 
+                            // EOF or error
+                            close(read_fd);
+                            pipe_child_to_parent[src][0] = -1;
+                            break;
                         }
-                    }
 
-                    // Intercept ESC key for server shutdown
-                    if (src == IDX_I && m.data[0] == 27) {
-                        if (mode == SERVER && network_fd > 0) {
-                            LOG("SERVER: Initiating shutdown protocol with client...");
-                            char qmsg[16] = "q";
-                            write(network_fd, qmsg, strlen(qmsg) + 1);
-                            
-                            char qbuf[128];
-                            memset(qbuf, 0, sizeof(qbuf));
-                            // Wait for client to receive and confirm (qok)
-                            if (read_line(network_fd, qbuf, sizeof(qbuf)) > 0) {
-                                if (strncmp(qbuf, "qok", 3) == 0) {
-                                    LOG("SERVER: Received 'qok', shutting down.");
+                        // Handshake: size -> sok (Server side)
+                        if (mode == SERVER && !size_sent && m.src == IDX_M && strncmp(m.data, "RESIZE", 6) == 0) {
+                            int w, h;
+                            sscanf(m.data, "RESIZE %d %d", &w, &h);
+                            char sbuf[128];
+                            memset(sbuf, 0, sizeof(sbuf));
+                            snprintf(sbuf, sizeof(sbuf), "size %d,%d", w, h);
+                            LOG("SERVER: Sending window size to client...");
+                            write(network_fd, sbuf, strlen(sbuf)+1);
+
+                            // Wait for sok
+                            memset(sbuf, 0, sizeof(sbuf));
+                            if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
+                                if (strncmp(sbuf, "sok", 3) == 0) {
+                                    LOG("SERVER: Received 'sok' from client");
+                                    size_sent = 1;
                                 }
                             }
                         }
-                        LOG("MAIN: ESC detected, cleaning up...");
-                        clean_children();
-                        running = 0;
-                    }
 
-                    // Targeted Routing for Blackboard (IDX_B)
-                    for (int d = 0; d < route_table[src].num; d++) {
-                        int dst = route_table[src].dest[d];
-
-                        // Efficiency: Skip unnecessary processes
-                        if (src == IDX_B) {
-                            if (strncmp(m.data, "D=", 2) == 0 && dst == IDX_D) continue; // Drone doesn't need its own pos
-                            if (strncmp(m.data, "STATS", 5) == 0 && dst == IDX_D) continue; // Drone doesn't need stats
-                        }
-
-                        // Track server drone position to be sent via network at throttled frequency
-                        if (mode == SERVER && src == IDX_B && strncmp(m.data, "D=", 2) == 0) {
-                            if (sscanf(m.data, "D=%d,%d", &server_drone_x, &server_drone_y) == 2) {
-                                server_drone_dirty = 1;
+                        // Intercept ESC key for server shutdown
+                        if (src == IDX_I && m.data[0] == 27) {
+                            if (mode == SERVER && network_fd > 0) {
+                                LOG("SERVER: Initiating shutdown protocol with client...");
+                                char qmsg[16] = "q";
+                                write(network_fd, qmsg, strlen(qmsg) + 1);
+                                
+                                char qbuf[128];
+                                memset(qbuf, 0, sizeof(qbuf));
+                                // Wait for client to receive and confirm (qok)
+                                if (read_line(network_fd, qbuf, sizeof(qbuf)) > 0) {
+                                    if (strncmp(qbuf, "qok", 3) == 0) {
+                                        LOG("SERVER: Received 'qok', shutting down.");
+                                    }
+                                }
                             }
-                        }
-                        
-                        // Track local drone position on Client for 'obst' requests
-                        if (mode == CLIENT && src == IDX_B && strncmp(m.data, "D=", 2) == 0) {
-                            sscanf(m.data, "D=%d,%d", &local_drone_x, &local_drone_y);
+                            LOG("MAIN: ESC detected, cleaning up...");
+                            clean_children();
+                            running = 0;
+                            break; // Exit draining loop
                         }
 
-                        int write_fd = pipe_parent_to_child[dst][1];
-                        if (write_fd != -1){
-                            write(write_fd, &m, sizeof(m));
+                        // Targeted Routing for Blackboard (IDX_B)
+                        for (int d = 0; d < route_table[src].num; d++) {
+                            int dst = route_table[src].dest[d];
+
+                            // Efficiency: Skip unnecessary processes
+                            if (src == IDX_B) {
+                                if (strncmp(m.data, "D=", 2) == 0 && dst == IDX_D) continue; // Drone doesn't need its own pos
+                                if (strncmp(m.data, "STATS", 5) == 0 && dst == IDX_D) continue; // Drone doesn't need stats
+                            }
+
+                            // Track server drone position to be sent via network at throttled frequency
+                            if (mode == SERVER && src == IDX_B && strncmp(m.data, "D=", 2) == 0) {
+                                if (sscanf(m.data, "D=%d,%d", &server_drone_x, &server_drone_y) == 2) {
+                                    server_drone_dirty = 1;
+                                }
+                            }
+                            
+                            // Track local drone position on Client for 'obst' requests
+                            if (mode == CLIENT && src == IDX_B && strncmp(m.data, "D=", 2) == 0) {
+                                sscanf(m.data, "D=%d,%d", &local_drone_x, &local_drone_y);
+                            }
+
+                            int write_fd = pipe_parent_to_child[dst][1];
+                            if (write_fd != -1){
+                                write(write_fd, &m, sizeof(m));
+                            }
                         }
                     }
                 }
