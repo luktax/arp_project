@@ -210,6 +210,7 @@ int main(int argc, char *argv[]) {
                         
                         bb.obs_x[0] = rx;
                         bb.obs_y[0] = ry;
+                        bb.num_obs=1;
                     }
                     continue;
                 }
@@ -219,9 +220,8 @@ int main(int argc, char *argv[]) {
                     write(fd_out, &map_msg, sizeof(map_msg));
                     // LOG("SERVER: Forwarded single obstacle to Map");
                     sscanf(m.data, "O=%d,%d", &bb.obs_x[0], &bb.obs_y[0]);
+                    bb.num_obs=1;
                     continue;
-
-
                 }
                 if (strncmp(m.data, "RESET", 5) == 0){ 
                     
@@ -427,7 +427,7 @@ int main(int argc, char *argv[]) {
         val.sival_int = time(NULL);
         
         //printf("[BB] signals: IM ALIVE\n");
-        sigqueue(watchdog_pid, SIGUSR1, val);
+        if (watchdog_pid > 0) sigqueue(watchdog_pid, SIGUSR1, val);
         if (mode != 0) usleep(10000);
         else usleep(50000); 
     }

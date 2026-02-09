@@ -244,16 +244,16 @@ int main(int argc, char *argv[]) {
 
             // STATS forwarded by Blackboard
             if (m.src == IDX_B && strncmp(m.data, "STATS", 5) == 0){
-                float fx, fy, vx, vy, x, y;
-                sscanf(m.data, "STATS %f %f %f %f %f %f", &fx, &fy, &vx, &vy, &x, &y);
-                
-                werase(win_stats);
-                box(win_stats, 0, 0);
-                mvwprintw(win_stats, 1, 1, "DYNAMICS");
-                mvwprintw(win_stats, 2, 1, "Pos:   %.2f, %.2f", x, y);
-                mvwprintw(win_stats, 3, 1, "Vel:   %.2f, %.2f", vx, vy);
-                mvwprintw(win_stats, 4, 1, "Force: %.2f, %.2f", fx, fy);
-                wrefresh(win_stats);
+                float sfx, sfy, svx, svy, sx, sy;
+                if (sscanf(m.data, "STATS Fx=%f Fy=%f Vx=%f Vy=%f X=%f Y=%f", &sfx, &sfy, &svx, &svy, &sx, &sy) == 6) {
+                    werase(win_stats);
+                    box(win_stats, 0, 0);
+                    mvwprintw(win_stats, 1, 1, "DYNAMICS");
+                    mvwprintw(win_stats, 2, 1, "Pos:   %.2f, %.2f", sx, sy);
+                    mvwprintw(win_stats, 3, 1, "Vel:   %.2f, %.2f", svx, svy);
+                    mvwprintw(win_stats, 4, 1, "Force: %.2f, %.2f", sfx, sfy);
+                    wrefresh(win_stats);
+                }
             }
             // Obstacle update
             else if (m.src == IDX_B && strncmp(m.data, "O=", 2) == 0){

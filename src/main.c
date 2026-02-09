@@ -591,6 +591,7 @@ int main(){
         static unsigned long last_drone_ms = 0;
         static unsigned long last_obst_ms = 0;
 
+        // LOOP Network mode
         int running = 1;
         while(running){
             fd_set rfds;
@@ -623,7 +624,9 @@ int main(){
             if (mode == CLIENT && network_fd > 0 && FD_ISSET(network_fd, &rfds)) {
                 char sbuf[128];
                 memset(sbuf, 0, sizeof(sbuf));
+                // read message from socket communication
                 if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
+                    // EXIT handling
                     if (strncmp(sbuf, "q", 1) == 0) {
                         LOG("CLIENT: Received exit command 'q'");
                         snprintf(sbuf, sizeof(sbuf), "qok");

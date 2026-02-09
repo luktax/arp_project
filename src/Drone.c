@@ -107,6 +107,16 @@ int main(int argc, char *argv[]) {
     int height = 30;
     int width = 155;
 
+    // Default parameters if file loading fails
+    struct params p = {
+        .M = 1.0,
+        .K = 1.0,
+        .T = 0.05,
+        .USER_FORCE = 5.0,
+        .RHO = 3.0,
+        .NI = 40.0
+    };
+
     int flag_reset = 0;
     int running = 1;
 
@@ -119,8 +129,10 @@ int main(int argc, char *argv[]) {
     }
 
     while(running){
-        struct params params;
-        load_params("config/ParameterFile.txt", &params);
+        load_params("config/ParameterFile.txt", &p);
+
+        struct timespec start_time;
+        clock_gettime(CLOCK_MONOTONIC, &start_time);
 
         if (flag_reset){
             D.x = 5;
@@ -163,13 +175,14 @@ int main(int argc, char *argv[]) {
 
             int ch = (m.data[0]);
             
+            int is_move = (ch == 'w' || ch == 'x' || ch == 'a' || ch == 'd' || 
+                           ch == 'e' || ch == 'c' || ch == 'q' || ch == 'z' || ch == 's');
+            
             // Dynamics Stabilization: Skip redundant movement keys in a single burst
-            // (e.g., multiple 'w' keys arriving in one select wake-up after network lag)
-            if (ch == last_ch_in_burst && (ch == 'w' || ch == 'x' || ch == 'a' || ch == 'd' || 
-                                          ch == 'e' || ch == 'c' || ch == 'q' || ch == 'z')) {
+            if (is_move && ch == last_ch_in_burst) {
                 continue;
             }
-            last_ch_in_burst = ch;
+            if (is_move) last_ch_in_burst = ch;
 
             if (strncmp(m.data, "RESIZE", 6)== 0){
                 ch = 'r';
@@ -221,49 +234,49 @@ int main(int argc, char *argv[]) {
         float dist = sqrt(dist_x*dist_x + dist_y*dist_y);
         float Frep_x = 0;
         float Frep_y = 0;
-        if (dist < params.RHO && dist>0){
-            Frep_x = params.NI * (1.0/dist - 1.0/params.RHO) * (dist_x / dist)*5;
-            Frep_y = params.NI * (1.0/dist - 1.0/params.RHO) * (dist_y / dist)*5;
+        if (dist < p.RHO && dist>0){
+            Frep_x = p.NI * (1.0/dist - 1.0/p.RHO) * (dist_x / dist) * 5;
+            Frep_y = p.NI * (1.0/dist - 1.0/p.RHO) * (dist_y / dist) * 5;
         }
 
         // Repulsive Force x and y from the walls
         // Wall left
         dist_x = X;
-        if (dist_x < params.RHO){ Frep_x += params.NI * (1.0/dist_x - 1.0/params.RHO)*(dist_x/dist_x);}
+        if (dist_x < p.RHO){ Frep_x += p.NI * (1.0/dist_x - 1.0/p.RHO)*(dist_x/dist_x);}
 
         // Wall right
         dist_x = abs(X - width);
-        if (dist_x < params.RHO) {Frep_x -= params.NI * (1.0/dist_x - 1.0/params.RHO)*(dist_x/dist_x);}
+        if (dist_x < p.RHO) {Frep_x -= p.NI * (1.0/dist_x - 1.0/p.RHO)*(dist_x/dist_x);}
 
         // Wall top
         dist_y = Y;
-        if (dist_y < params.RHO) {Frep_y += params.NI * (1.0/dist_y - 1.0/params.RHO)*(dist_y/dist_y);}
+        if (dist_y < p.RHO) {Frep_y += p.NI * (1.0/dist_y - 1.0/p.RHO)*(dist_y/dist_y);}
 
         // Wall bottom
         dist_y = abs(Y- height);
-        if (dist_y < params.RHO) {Frep_y -= params.NI * (1.0/dist_y - 1.0/params.RHO)*(dist_y/dist_y);}
+        if (dist_y < p.RHO) {Frep_y -= p.NI * (1.0/dist_y - 1.0/p.RHO)*(dist_y/dist_y);}
 
-        //printf("Repulsive force: %f, %f", Frep_x, Frep_y);
+        // printf("Repulsive force: %f, %f", Frep_x, Frep_y);
 
         // Viscous force X
-        float Fvisc_x = params.K * D.vx;
+        float Fvisc_x = p.K * D.vx;
 
         // Resulting Force X
-        float Fx_TOT = D.Fx * params.USER_FORCE - Fvisc_x + Frep_x;
+        float Fx_TOT = D.Fx * p.USER_FORCE - Fvisc_x + Frep_x;
         
         // Viscous force Y
-        float Fvisc_y = params.K * D.vy;
+        float Fvisc_y = p.K * D.vy;
         // Resulting Force Y
-        float Fy_TOT = D.Fy * params.USER_FORCE - Fvisc_y + Frep_y;
+        float Fy_TOT = D.Fy * p.USER_FORCE - Fvisc_y + Frep_y;
 
         // X position update
-        float ax = Fx_TOT/params.M;
-        D.vx = D.vx + ax * params.T;
-        X = X + D.vx * params.T;
+        float ax = Fx_TOT/p.M;
+        D.vx = D.vx + ax * p.T;
+        X = X + D.vx * p.T;
         // Y position update
-        float ay = Fy_TOT/params.M;
-        D.vy = D.vy + ay * params.T;
-        Y = Y + D.vy * params.T;
+        float ay = Fy_TOT/p.M;
+        D.vy = D.vy + ay * p.T;
+        Y = Y + D.vy * p.T;
 
         // Zero out small velocities to prevent jitter
         if (fabs(D.vx) < 0.01) D.vx = 0;
@@ -272,10 +285,10 @@ int main(int argc, char *argv[]) {
         // Send STATS to Blackboard for Diagnostics
         // Send STATS to Blackboard for Diagnostics (Reduced frequency)
         static int stats_count = 0;
-        if (stats_count++ % 100 == 0) {
+        if (stats_count++ % 10 == 0) {
             struct msg stats_msg;
             stats_msg.src = IDX_D;
-            snprintf(stats_msg.data, MSG_SIZE, "STATS %.2f %.2f %.2f %.2f %.2f %.2f", Fx_TOT, Fy_TOT, D.vx, D.vy, X, Y);
+            snprintf(stats_msg.data, MSG_SIZE, "STATS Fx=%.2f Fy=%.2f Vx=%.2f Vy=%.2f X=%.2f Y=%.2f (T=%.3f)", Fx_TOT, Fy_TOT, D.vx, D.vy, X, Y, p.T);
             write(fd_out, &stats_msg, sizeof(stats_msg));
             LOG(stats_msg.data);
         }
@@ -303,16 +316,24 @@ int main(int argc, char *argv[]) {
             */
 
         }
-        // Send alive signal to watchdog
-        union sigval val;
-        val.sival_int = time(NULL);
-        
-        //printf("[D] signals: IM ALIVE\n");
+        // Send alive signal to watchdog - ALWAYS guard with watchdog_pid > 0
         if (watchdog_pid > 0) {
+            union sigval val;
+            val.sival_int = time(NULL);
             sigqueue(watchdog_pid, SIGUSR1, val);
         }
 
-        usleep(params.T * 1e6);
+        // Precise, signal-safe sleep to maintain constant frequency
+        struct timespec end_time, sleep_req;
+        clock_gettime(CLOCK_MONOTONIC, &end_time);
+        long elapsed_ns = (end_time.tv_sec - start_time.tv_sec) * 1000000000L + (end_time.tv_nsec - start_time.tv_nsec);
+        long target_ns = (long)(p.T * 1000000000L);
+        if (elapsed_ns < target_ns) {
+            sleep_req.tv_sec = (target_ns - elapsed_ns) / 1000000000L;
+            sleep_req.tv_nsec = (target_ns - elapsed_ns) % 1000000000L;
+            // Use while to resume sleep if interrupted by EINTR
+            while (nanosleep(&sleep_req, &sleep_req) == -1 && errno == EINTR);
+        }
     }
 
     close(fd_in);
