@@ -710,13 +710,23 @@ int main(){
                         }
                     }
 
-                    /* Silence high-frequency keyboard debug
-                    if (src == IDX_I) {
-                       char dbg[64];
-                       snprintf(dbg, sizeof(dbg), "DEBUG: [S/C] Main read from Keyboard: %d bytes, key=%c", n, m.data[0]);
-                       LOG(dbg);
+                    // Intercept ESC key for server shutdown
+                    if (src == IDX_I && m.data[0] == 27) {
+                        if (mode == SERVER && network_fd > 0) {
+                            LOG("SERVER: Initiating shutdown protocol with client...");
+                            char qmsg[16] = "q";
+                            write(network_fd, qmsg, strlen(qmsg) + 1);
+                            
+                            char qbuf[128];
+                            memset(qbuf, 0, sizeof(qbuf));
+                            if (read_line(network_fd, qbuf, sizeof(qbuf)) > 0) {
+                                if (strncmp(qbuf, "qok", 3) == 0) {
+                                    LOG("SERVER: Received 'qok', shutting down.");
+                                }
+                            }
+                        }
+                        break; // Break the main while(1) loop
                     }
-                    */
 
                     // Targeted Routing for Blackboard (IDX_B)
                     for (int d = 0; d < route_table[src].num; d++) {
@@ -746,7 +756,7 @@ int main(){
                             // REMOTE
                             char remote_msg[100] = "drone";
                             int w = write(network_fd, &remote_msg, strlen(remote_msg)+1);
-                            LOG("SERVER sent 'drone'");
+                            // LOG("SERVER sent 'drone'");
                             
                             int x, y;
                             if (sscanf(m.data, "D=%d,%d", &x, &y) == 2) {
@@ -756,14 +766,14 @@ int main(){
                             if (w < 0) perror("Write to network failed");
                             
                             snprintf(remote_msg, sizeof(remote_msg), "[SERVER] Sent drone position to the client, drone= x=%d, y=%d", x,y);
-                            LOG(remote_msg);
+                            // LOG(remote_msg);
                         }
                         // Wait for dok
                         char sbuf[128];
                         memset(sbuf, 0, sizeof(sbuf));
                         if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
                             if (strncmp(sbuf, "dok", 3) == 0) {
-                                LOG("SERVER: Received 'dok' from client");
+                                // LOG("SERVER: Received 'dok' from client");
                             }
                         }
                     }
