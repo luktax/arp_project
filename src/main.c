@@ -651,7 +651,7 @@ int main(){
             
             // SERVER protocol network
             static int obst_count = 0;
-            if(mode == SERVER && size_sent && (obst_count++ % 100 == 0)){
+            if(mode == SERVER && size_sent && (obst_count++ % 10 == 0)){
                 // REMOTE
                 char remote_msg[100] = "obst";
                 write(network_fd, &remote_msg, strlen(remote_msg)+1);

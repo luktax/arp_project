@@ -176,7 +176,7 @@ int main(int argc, char *argv[]) {
         
         // Resizing logic
         int ch = getch();
-        if (ch == KEY_RESIZE){
+        if (ch == KEY_RESIZE && mode == STANDALONE){
 
             int c2;
             do {
