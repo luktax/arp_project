@@ -18,6 +18,10 @@
 int grabbed = 0;
 int height, width;
 
+#define MAX_OBS 100
+
+int mode;
+
 /**
  * Redraw the main ncurses window and its borders.
  */
@@ -110,7 +114,7 @@ int main(int argc, char *argv[]) {
     pid_t watchdog_pid = atoi(argv[3]);
     
     // Mode (0=STANDALONE, 1=SERVER, 2=CLIENT)
-    int mode = (argc >= 5) ? atoi(argv[4]) : 0;
+    mode = (argc >= 5) ? atoi(argv[4]) : 0;
 
     setlocale(LC_ALL, "");
     initscr();

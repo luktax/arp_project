@@ -15,6 +15,11 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <sys/time.h>
+#include <time.h>
+
+#define DRONE_SYNC_MS 100
+#define OBST_SYNC_MS 200
 
 // Header files
 #include "../include/process_log.h"
@@ -573,9 +578,12 @@ int main(){
         route_table[IDX_O].dest[route_table[IDX_O].num++] = IDX_B; //R->BB
         
         static int size_sent = 0;
-        static int local_drone_x = 0, local_drone_y = 0; // Track client drone for 'obst' requests
-        static int server_drone_x = 0, server_drone_y = 0; // Track server drone for network updates
+        static int local_drone_x = 0, local_drone_y = 0; 
+        static int server_drone_x = 0, server_drone_y = 0; 
         static int server_drone_dirty = 0;
+        
+        static unsigned long last_drone_ms = 0;
+        static unsigned long last_obst_ms = 0;
 
         while(1){
             fd_set rfds;
@@ -613,7 +621,9 @@ int main(){
                         LOG("CLIENT: Received exit command 'q'");
                         snprintf(sbuf, sizeof(sbuf), "qok");
                         write(network_fd, sbuf, strlen(sbuf) + 1);
-                        break; // Exit loop
+                        LOG("MAIN (CLIENT): Cleaning up children...");
+                        clean_children();
+                        break; // Exit loop to waitpid
                     }
                     else if (strncmp(sbuf, "drone", 5) == 0) {
                         // Server drone position update
@@ -649,42 +659,44 @@ int main(){
                 }
             }
             
-            // SERVER protocol network
-            static int obst_count = 0;
-            if(mode == SERVER && size_sent && (obst_count++ % 10 == 0)){
-                // REMOTE
-                char remote_msg[100] = "obst";
-                write(network_fd, &remote_msg, strlen(remote_msg)+1);
+            // --- Time-based Network Synchronization (SERVER) ---
+            struct timeval tv;
+            gettimeofday(&tv, NULL);
+            unsigned long current_ms = tv.tv_sec * 1000 + tv.tv_usec / 1000;
+
+            if (mode == SERVER && size_sent && network_fd > 0) {
+                // Throttled Obstacle Request (5Hz)
+                if (current_ms - last_obst_ms >= OBST_SYNC_MS) {
+                    char remote_msg[100] = "obst";
+                    write(network_fd, &remote_msg, strlen(remote_msg)+1);
                 LOG("SERVER: sent obst");
                 // Wait for obst position
-                char sbuf[128];
-                memset(sbuf, 0, sizeof(sbuf));
-                if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
-                    int ox, oy;
-                    if (sscanf(sbuf, "%d, %d", &ox, &oy) == 2) {
+                    char sbuf[128];
+                    memset(sbuf, 0, sizeof(sbuf));
+                    if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
+                        int ox, oy;
+                        if (sscanf(sbuf, "%d, %d", &ox, &oy) == 2) {
                         LOG("SERVER: Received obstacle from client");
                         
                         // Forward to Blackboard
-                        struct msg m_obst;
-                        m_obst.src = IDX_O;
-                        snprintf(m_obst.data, MSG_SIZE, "O=%d,%d", ox, oy);
-                        write(pipe_parent_to_child[IDX_B][1], &m_obst, sizeof(m_obst));
+                            struct msg m_obst;
+                            m_obst.src = IDX_O;
+                            snprintf(m_obst.data, MSG_SIZE, "O=%d,%d", ox, oy);
+                            write(pipe_parent_to_child[IDX_B][1], &m_obst, sizeof(m_obst));
                         
                         // Send pok
-                        snprintf(remote_msg, sizeof(remote_msg), "pok");
-                        write(network_fd, &remote_msg, strlen(remote_msg)+1);
-                        LOG("SERVER: sent pok");
+                            snprintf(remote_msg, sizeof(remote_msg), "pok");
+                            write(network_fd, &remote_msg, strlen(remote_msg)+1);
+                            LOG("SERVER: sent pok");
+                        }
                     }
+                    last_obst_ms = current_ms;
                 }
-            }
 
-            // SERVER protocol network: Drone position
-            static int drone_count = 0;
-            if(mode == SERVER && size_sent && server_drone_dirty && (drone_count++ % 5 == 0)){
-                if(network_fd > 0){
+                // Throttled Drone Sync (10Hz)
+                if (server_drone_dirty && (current_ms - last_drone_ms >= DRONE_SYNC_MS)) {
                     char remote_msg[100] = "drone";
                     write(network_fd, &remote_msg, strlen(remote_msg)+1);
-                    
                     snprintf(remote_msg, sizeof(remote_msg), "%d, %d", server_drone_x, server_drone_y);
                     write(network_fd, &remote_msg, strlen(remote_msg)+1);
                     
@@ -693,10 +705,11 @@ int main(){
                     memset(sbuf, 0, sizeof(sbuf));
                     if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
                         if (strncmp(sbuf, "dok", 3) == 0) {
-                            // LOG("SERVER: Received 'dok' from client");
+                            LOG("SERVER: Received 'dok' from client");
                         }
                     }
                     server_drone_dirty = 0;
+                    last_drone_ms = current_ms;
                 }
             }
 
@@ -743,12 +756,15 @@ int main(){
                             
                             char qbuf[128];
                             memset(qbuf, 0, sizeof(qbuf));
+                            // Wait for client to receive and confirm (qok)
                             if (read_line(network_fd, qbuf, sizeof(qbuf)) > 0) {
                                 if (strncmp(qbuf, "qok", 3) == 0) {
                                     LOG("SERVER: Received 'qok', shutting down.");
                                 }
                             }
                         }
+                        LOG("MAIN: ESC detected, cleaning up...");
+                        clean_children();
                         break; // Break the main while(1) loop
                     }
 
@@ -783,6 +799,8 @@ int main(){
             }    
         }
     }
+
+    clean_children();
 
     waitpid(pid_B, NULL, 0);
     waitpid(pid_D, NULL, 0);
