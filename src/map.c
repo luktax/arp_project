@@ -250,7 +250,7 @@ int main(int argc, char *argv[]) {
             // Obstacle update
             else if (m.src == IDX_B && strncmp(m.data, "O=", 2) == 0){
                 int o_x, o_y;
-                LOG("MAP received obs position");
+                // LOG("MAP received obs position");
                 if (mode == SERVER) num_obs = 0; // Only keep one obstacle in server mode
                 sscanf(m.data, "O=%d,%d", &o_x, &o_y);
                 obs_x[num_obs] = o_x;
@@ -309,7 +309,7 @@ int main(int argc, char *argv[]) {
             // Drone position update
             else if(m.src == IDX_B && strncmp(m.data, "D=", 2) == 0){
                 sscanf(m.data, "D=%d,%d", &x, &y);
-                LOG(m.data);
+                // LOG(m.data);
             }
             else if (strncmp(m.data, "ESC", 3)== 0){
                 printf("[MAP] EXIT\n");

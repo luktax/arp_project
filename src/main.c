@@ -573,6 +573,7 @@ int main(){
         route_table[IDX_O].dest[route_table[IDX_O].num++] = IDX_B; //R->BB
         
         static int size_sent = 0;
+        static int local_drone_x = 0, local_drone_y = 0; // Track client drone for 'obst' requests
 
         while(1){
             fd_set rfds;
@@ -600,8 +601,55 @@ int main(){
                 perror("select server");
                 break;
             }
+
+            // --- CLIENT Network Protocol ---
+            if (mode == CLIENT && network_fd > 0 && FD_ISSET(network_fd, &rfds)) {
+                char sbuf[128];
+                memset(sbuf, 0, sizeof(sbuf));
+                if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
+                    if (strncmp(sbuf, "q", 1) == 0) {
+                        LOG("CLIENT: Received exit command 'q'");
+                        snprintf(sbuf, sizeof(sbuf), "qok");
+                        write(network_fd, sbuf, strlen(sbuf) + 1);
+                        break; // Exit loop
+                    }
+                    else if (strncmp(sbuf, "drone", 5) == 0) {
+                        // Server drone position update
+                        memset(sbuf, 0, sizeof(sbuf));
+                        if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
+                            int dx, dy;
+                            if (sscanf(sbuf, "%d, %d", &dx, &dy) == 2) {
+                                // Send dok
+                                snprintf(sbuf, sizeof(sbuf), "dok");
+                                write(network_fd, sbuf, strlen(sbuf) + 1);
+
+                                // Forward to local Blackboard as REMOTE
+                                struct msg m_remote;
+                                m_remote.src = IDX_O; // Act as remote source
+                                snprintf(m_remote.data, MSG_SIZE, "REMOTE %d, %d", dx, dy);
+                                write(pipe_parent_to_child[IDX_B][1], &m_remote, sizeof(m_remote));
+                            }
+                        }
+                    }
+                    else if (strncmp(sbuf, "obst", 4) == 0) {
+                        // Server asking for Client's drone position (obst)
+                        snprintf(sbuf, sizeof(sbuf), "%d, %d", local_drone_x, local_drone_y);
+                        write(network_fd, sbuf, strlen(sbuf) + 1);
+                        
+                        // Wait for pok
+                        memset(sbuf, 0, sizeof(sbuf));
+                        if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
+                            if (strncmp(sbuf, "pok", 3) == 0) {
+                                // OK
+                            }
+                        }
+                    }
+                }
+            }
             
-            if(mode == SERVER && size_sent){
+            // SERVER protocol network
+            static int obst_count = 0;
+            if(mode == SERVER && size_sent && (obst_count++ % 100 == 0)){
                 // REMOTE
                 char remote_msg[100] = "obst";
                 write(network_fd, &remote_msg, strlen(remote_msg)+1);
@@ -662,40 +710,38 @@ int main(){
                         }
                     }
 
+                    /* Silence high-frequency keyboard debug
                     if (src == IDX_I) {
                        char dbg[64];
                        snprintf(dbg, sizeof(dbg), "DEBUG: [S/C] Main read from Keyboard: %d bytes, key=%c", n, m.data[0]);
                        LOG(dbg);
                     }
+                    */
 
-                    // Destination from route_table
+                    // Targeted Routing for Blackboard (IDX_B)
                     for (int d = 0; d < route_table[src].num; d++) {
                         int dst = route_table[src].dest[d];
-                        int write_fd = pipe_parent_to_child[dst][1];
-                        
-                        if (write_fd != -1){
-                            ssize_t w = write(write_fd, &m, sizeof(m));
-                            if (w == sizeof(m)) {
-                                if (mode != 0) {
-                                    char tlog[128];
-                                    snprintf(tlog, sizeof(tlog), "DEBUG: [S/C] Main routed msg (src=%d, key=%c) to %s (fd=%d)", m.src, m.data[0], process_names[dst], write_fd);
-                                    LOG(tlog);
-                                }
-                            }
-                        }
-                        
-                        char log_msg[128];
-                        if (mode == SERVER){
-                            snprintf(log_msg, sizeof(log_msg), "[SERVER] Message redirected from %s to %s", process_names[src], process_names[dst]);
-                            LOG(log_msg);
-                        } else{
-                            snprintf(log_msg, sizeof(log_msg), "[CLIENT] Message redirected from %s to %s", process_names[src], process_names[dst]);
-                            LOG(log_msg);
+
+                        // Efficiency: Skip unnecessary processes
+                        if (src == IDX_B) {
+                            if (strncmp(m.data, "D=", 2) == 0 && dst == IDX_D) continue; // Drone doesn't need its own pos
+                            if (strncmp(m.data, "STATS", 5) == 0 && dst == IDX_D) continue; // Drone doesn't need stats
+                            if (strncmp(m.data, "T[", 2) == 0 && dst == IDX_D) continue; // Drone doesn't need targets
                         }
 
+                        // Track local drone position on Client for 'obst' requests
+                        if (mode == CLIENT && src == IDX_B && strncmp(m.data, "D=", 2) == 0) {
+                            sscanf(m.data, "D=%d,%d", &local_drone_x, &local_drone_y);
+                        }
+
+                        int write_fd = pipe_parent_to_child[dst][1];
+                        if (write_fd != -1){
+                            write(write_fd, &m, sizeof(m));
+                        }
                     }
-                    // send drone position every time it is received from the blackboard
-                    if ((strncmp(m.data, "REMOTE", 6) == 0)&& mode == SERVER && size_sent){
+
+                    // Unified Drone Forwarding to Network
+                    if (src == IDX_B && strncmp(m.data, "D=", 2) == 0 && mode == SERVER && size_sent) {
                         if(network_fd > 0){
                             // REMOTE
                             char remote_msg[100] = "drone";
@@ -703,12 +749,11 @@ int main(){
                             LOG("SERVER sent 'drone'");
                             
                             int x, y;
-                            sscanf(m.data, "REMOTE %d, %d", &x, &y);
-    
-                            snprintf(remote_msg, sizeof(remote_msg), "%d, %d", x,y);
-                            w = write(network_fd, &remote_msg, strlen(remote_msg)+1);
+                            if (sscanf(m.data, "D=%d,%d", &x, &y) == 2) {
+                                snprintf(remote_msg, sizeof(remote_msg), "%d, %d", x,y);
+                                w = write(network_fd, &remote_msg, strlen(remote_msg)+1);
+                            }
                             if (w < 0) perror("Write to network failed");
-                            else LOG("SERVER sent position");
                             
                             snprintf(remote_msg, sizeof(remote_msg), "[SERVER] Sent drone position to the client, drone= x=%d, y=%d", x,y);
                             LOG(remote_msg);

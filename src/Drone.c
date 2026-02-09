@@ -261,12 +261,12 @@ int main(int argc, char *argv[]) {
         // Send STATS to Blackboard for Diagnostics
         // Send STATS to Blackboard for Diagnostics (Reduced frequency)
         static int stats_count = 0;
-        if (stats_count++ % 10 == 0) {
+        if (stats_count++ % 100 == 0) {
             struct msg stats_msg;
             stats_msg.src = IDX_D;
             snprintf(stats_msg.data, MSG_SIZE, "STATS %.2f %.2f %.2f %.2f %.2f %.2f", Fx_TOT, Fy_TOT, D.vx, D.vy, X, Y);
             write(fd_out, &stats_msg, sizeof(stats_msg));
-            LOG("stats_msg.data");
+            LOG(stats_msg.data);
         }
         // Update the discrete position
         D.x = (int)roundf(X);
