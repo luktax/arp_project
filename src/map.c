@@ -9,6 +9,7 @@
 #include <string.h>
 #include <math.h>
 #include <errno.h>
+#include <time.h>
 
 #include "../include/process_log.h"
 #define PROCESS_NAME "MAP"
@@ -19,6 +20,7 @@
 #define STATS_WIDTH 35
 
 int grabbed = 0;
+int height, width;
 
 /**
  * Redraw the main ncurses window and its borders.
@@ -26,6 +28,9 @@ int grabbed = 0;
 void draw_window(WINDOW *win){
     int H, W;
     getmaxyx(stdscr, H, W);
+
+    height = H;
+    width = W;
 
     int margin = 3;
 
@@ -101,6 +106,9 @@ int main(int argc, char *argv[]) {
     fcntl(fd_in, F_SETFL, flags | O_NONBLOCK);
     // Watchdog PID to send alive signals
     pid_t watchdog_pid = atoi(argv[3]);
+    
+    // Mode (0=STANDALONE, 1=SERVER, 2=CLIENT)
+    int mode = (argc >= 5) ? atoi(argv[4]) : 0;
 
     setlocale(LC_ALL, "");
     initscr();
@@ -118,9 +126,13 @@ int main(int argc, char *argv[]) {
     init_pair(2, COLOR_YELLOW, -1);           
     init_pair(3, COLOR_WHITE, -1);
     init_pair(4, COLOR_GREEN, -1);
-    
-    int height, width;
-    getmaxyx(stdscr, height, width);
+
+    // If initial dimensions are passed as arguments (Client mode)
+    if (argc >= 7) {
+        width = atoi(argv[5]) + STATS_WIDTH + 6;
+        height = atoi(argv[6]) + 6;
+        LOG("Initial dimensions from command line used");
+    }
 
     WINDOW *win_main = newwin(1, 1, 0, 0);
 
@@ -128,6 +140,12 @@ int main(int argc, char *argv[]) {
     int y = 5;
 
     draw_window(win_main);
+    
+    // Initial message to notify Blackboard of the terminal dimension
+    struct msg mb_init;
+    mb_init.src = IDX_M;
+    snprintf(mb_init.data, MSG_SIZE, "RESIZE %d %d", width - STATS_WIDTH - 6, height - 6);
+    write(fd_out, &mb_init, sizeof(mb_init));
     
     // Stats window placement: Right side
     int W_scr, H_scr;
@@ -149,8 +167,8 @@ int main(int argc, char *argv[]) {
     int num_tgs = 0;
 
     // Redraw flags
-    int ready_o = 0;
-    int ready_t = 0;
+    int ready_o = 1;
+    int ready_t = 1;
 
     int running = 1;
 
@@ -232,12 +250,12 @@ int main(int argc, char *argv[]) {
             // Obstacle update
             else if (m.src == IDX_B && strncmp(m.data, "O=", 2) == 0){
                 int o_x, o_y;
+                LOG("MAP received obs position");
+                if (mode == SERVER) num_obs = 0; // Only keep one obstacle in server mode
                 sscanf(m.data, "O=%d,%d", &o_x, &o_y);
                 obs_x[num_obs] = o_x;
                 obs_y[num_obs] = o_y;
                 num_obs++;
-                //printf("[M] posizione ostacolo: %d,%d\n", o_x, o_y);
-
             }
             // Target update
             else if (m.src == IDX_B && strncmp(m.data, "T[", 2) == 0){
@@ -291,6 +309,7 @@ int main(int argc, char *argv[]) {
             // Drone position update
             else if(m.src == IDX_B && strncmp(m.data, "D=", 2) == 0){
                 sscanf(m.data, "D=%d,%d", &x, &y);
+                LOG(m.data);
             }
             else if (strncmp(m.data, "ESC", 3)== 0){
                 printf("[MAP] EXIT\n");
@@ -303,7 +322,7 @@ int main(int argc, char *argv[]) {
         if (!running) break;
         if (ready_o && ready_t){
             draw_all(win_main, obs_x, obs_y, num_obs, tgs_x ,tgs_y, num_tgs, x, y);
-            LOG("Map redrawn");
+            // LOG("Map redrawn"); // Too frequent in debug mode
         }
 
         // Send alive signal to watchdog
@@ -311,7 +330,10 @@ int main(int argc, char *argv[]) {
         val.sival_int = time(NULL);
         
         //printf("[M] signals: IM ALIVE\n");
-        sigqueue(watchdog_pid, SIGUSR1, val);
+        //printf("[M] signals: IM ALIVE\n");
+        if (watchdog_pid > 0) {
+            sigqueue(watchdog_pid, SIGUSR1, val);
+        }
 
         usleep(50000);
 

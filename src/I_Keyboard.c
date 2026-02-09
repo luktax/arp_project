@@ -106,6 +106,10 @@ int main(int argc, char *argv[]) {
         ch = getch(); // Get user input
 
         if (ch != ERR) {
+            char debug_buf[64];
+            snprintf(debug_buf, 64, "DEBUG: Key detected: %d", ch);
+            LOG(debug_buf);
+
             if (ch == KEY_RESIZE) {
                 getmaxyx(stdscr, height, width);
                 start_y = height/2-7;
@@ -148,7 +152,9 @@ int main(int argc, char *argv[]) {
         val.sival_int = time(NULL);
         
         //printf("[K] signals: IM ALIVE\n");
-        sigqueue(watchdog_pid, SIGUSR1, val);
+        if (watchdog_pid > 0) {
+            sigqueue(watchdog_pid, SIGUSR1, val);
+        }
 
         usleep(50000); // 50 ms delay 
     }
