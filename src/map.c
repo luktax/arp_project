@@ -251,7 +251,7 @@ int main(int argc, char *argv[]) {
             else if (m.src == IDX_B && strncmp(m.data, "O=", 2) == 0){
                 int o_x, o_y;
                 // LOG("MAP received obs position");
-                if (mode == SERVER) num_obs = 0; // Only keep one obstacle in server mode
+                if (mode == SERVER || mode == CLIENT) num_obs = 0; // Only keep one obstacle in server/client remote mode
                 sscanf(m.data, "O=%d,%d", &o_x, &o_y);
                 obs_x[num_obs] = o_x;
                 obs_y[num_obs] = o_y;

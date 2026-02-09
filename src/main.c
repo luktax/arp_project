@@ -574,6 +574,8 @@ int main(){
         
         static int size_sent = 0;
         static int local_drone_x = 0, local_drone_y = 0; // Track client drone for 'obst' requests
+        static int server_drone_x = 0, server_drone_y = 0; // Track server drone for network updates
+        static int server_drone_dirty = 0;
 
         while(1){
             fd_set rfds;
@@ -676,6 +678,28 @@ int main(){
                 }
             }
 
+            // SERVER protocol network: Drone position
+            static int drone_count = 0;
+            if(mode == SERVER && size_sent && server_drone_dirty && (drone_count++ % 5 == 0)){
+                if(network_fd > 0){
+                    char remote_msg[100] = "drone";
+                    write(network_fd, &remote_msg, strlen(remote_msg)+1);
+                    
+                    snprintf(remote_msg, sizeof(remote_msg), "%d, %d", server_drone_x, server_drone_y);
+                    write(network_fd, &remote_msg, strlen(remote_msg)+1);
+                    
+                    // Wait for dok
+                    char sbuf[128];
+                    memset(sbuf, 0, sizeof(sbuf));
+                    if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
+                        if (strncmp(sbuf, "dok", 3) == 0) {
+                            // LOG("SERVER: Received 'dok' from client");
+                        }
+                    }
+                    server_drone_dirty = 0;
+                }
+            }
+
             for (int src = 0; src < NUM_PROCESSES; src++) {
                 int read_fd = pipe_child_to_parent[src][0];
 
@@ -739,6 +763,13 @@ int main(){
                             if (strncmp(m.data, "T[", 2) == 0 && dst == IDX_D) continue; // Drone doesn't need targets
                         }
 
+                        // Track server drone position to be sent via network at throttled frequency
+                        if (mode == SERVER && src == IDX_B && strncmp(m.data, "D=", 2) == 0) {
+                            if (sscanf(m.data, "D=%d,%d", &server_drone_x, &server_drone_y) == 2) {
+                                server_drone_dirty = 1;
+                            }
+                        }
+                        
                         // Track local drone position on Client for 'obst' requests
                         if (mode == CLIENT && src == IDX_B && strncmp(m.data, "D=", 2) == 0) {
                             sscanf(m.data, "D=%d,%d", &local_drone_x, &local_drone_y);
@@ -749,35 +780,6 @@ int main(){
                             write(write_fd, &m, sizeof(m));
                         }
                     }
-
-                    // Unified Drone Forwarding to Network
-                    if (src == IDX_B && strncmp(m.data, "D=", 2) == 0 && mode == SERVER && size_sent) {
-                        if(network_fd > 0){
-                            // REMOTE
-                            char remote_msg[100] = "drone";
-                            int w = write(network_fd, &remote_msg, strlen(remote_msg)+1);
-                            // LOG("SERVER sent 'drone'");
-                            
-                            int x, y;
-                            if (sscanf(m.data, "D=%d,%d", &x, &y) == 2) {
-                                snprintf(remote_msg, sizeof(remote_msg), "%d, %d", x,y);
-                                w = write(network_fd, &remote_msg, strlen(remote_msg)+1);
-                            }
-                            if (w < 0) perror("Write to network failed");
-                            
-                            snprintf(remote_msg, sizeof(remote_msg), "[SERVER] Sent drone position to the client, drone= x=%d, y=%d", x,y);
-                            // LOG(remote_msg);
-                        }
-                        // Wait for dok
-                        char sbuf[128];
-                        memset(sbuf, 0, sizeof(sbuf));
-                        if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
-                            if (strncmp(sbuf, "dok", 3) == 0) {
-                                // LOG("SERVER: Received 'dok' from client");
-                            }
-                        }
-                    }
-                }
             }    
         }
     }

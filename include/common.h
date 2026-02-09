@@ -10,7 +10,8 @@
 // Default port for network communication
 #define DEFAULT_PORT 8080
 //#define HOST_NAME "localhost"
-#define HOST_NAME "130.251.107.95"
+#//define HOST_NAME "130.251.107.95" // MICHELE 
+#define HOST_NAME "172.30.228.47" // PC TAX
 
 // Process indices
 enum {
