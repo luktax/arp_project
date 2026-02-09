@@ -760,7 +760,6 @@ int main(){
                         if (src == IDX_B) {
                             if (strncmp(m.data, "D=", 2) == 0 && dst == IDX_D) continue; // Drone doesn't need its own pos
                             if (strncmp(m.data, "STATS", 5) == 0 && dst == IDX_D) continue; // Drone doesn't need stats
-                            if (strncmp(m.data, "T[", 2) == 0 && dst == IDX_D) continue; // Drone doesn't need targets
                         }
 
                         // Track server drone position to be sent via network at throttled frequency
@@ -780,6 +779,7 @@ int main(){
                             write(write_fd, &m, sizeof(m));
                         }
                     }
+                }
             }    
         }
     }
