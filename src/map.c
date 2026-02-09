@@ -110,11 +110,14 @@ int main(int argc, char *argv[]) {
 
     int flags = fcntl(fd_in, F_GETFL, 0);
     fcntl(fd_in, F_SETFL, flags | O_NONBLOCK);
+    
     // Watchdog PID to send alive signals
     pid_t watchdog_pid = atoi(argv[3]);
     
-    // Mode (0=STANDALONE, 1=SERVER, 2=CLIENT)
-    mode = (argc >= 5) ? atoi(argv[4]) : 0;
+    /* ========================================================================
+     * NETWORK MODE: Operating mode parameter (0=STANDALONE, 1=SERVER, 2=CLIENT)
+     * ======================================================================== */
+    mode = (argc >= 5) ? atoi(argv[4]) : STANDALONE;
 
     setlocale(LC_ALL, "");
     initscr();
@@ -133,7 +136,9 @@ int main(int argc, char *argv[]) {
     init_pair(3, COLOR_WHITE, -1);
     init_pair(4, COLOR_GREEN, -1);
 
-    // Initial dimensions: use arguments ONLY for network modes
+    /* ========================================================================
+     * NETWORK MODE: Window Dimension Initialization
+     * ======================================================================== */
     if (mode != STANDALONE && argc >= 7) {
         width = atoi(argv[5]) + STATS_WIDTH + MARGIN_X;
         height = atoi(argv[6]) + MARGIN_Y;
@@ -182,7 +187,7 @@ int main(int argc, char *argv[]) {
 
     while(running){
         
-        // Resizing logic
+        // Resizing logic only on standalone mode
         int ch = getch();
         if (ch == KEY_RESIZE && mode == STANDALONE){
 

@@ -9,15 +9,22 @@
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
+#include <time.h>
+
+/* ========================================================================
+ * NETWORK MODE: Additional includes for socket communication
+ * ======================================================================== */
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
 #include <netdb.h>
 #include <sys/time.h>
-#include <time.h>
 
+/* ========================================================================
+ * NETWORK MODE: Synchronization timing constants
+ * - DRONE_SYNC_MS: Frequency for sending drone position updates (10Hz)
+ * - OBST_SYNC_MS: Frequency for requesting obstacle position (20Hz)
+ * ======================================================================== */
 #define DRONE_SYNC_MS 100
 #define OBST_SYNC_MS 50
 
@@ -59,6 +66,9 @@ void handle_signal(int sig) {
     exit(0);
 }
 
+/* ========================================================================
+ * NETWORK MODE: Helper function for reading null-terminated strings from socket
+ * ======================================================================== */
 ssize_t read_line(int fd, char *buf, size_t maxlen) {
     size_t i = 0;
     char c;
@@ -88,9 +98,15 @@ typedef struct{
     int dest[NUM_PROCESSES];
 } route_t;
 
+/* ========================================================================
+ * NETWORK MODE: Global variables for network operation
+ * - mode: Operating mode (STANDALONE=0, SERVER=1, CLIENT=2)
+ * - network_fd: Socket file descriptor for network communication
+ * - win_w, win_h: Window dimensions (fixed in network mode, dynamic in standalone)
+ * ======================================================================== */
 int mode = 100;
-int server_fd, client_fd, network_fd = -1; // Network file descriptors
-int win_w = 155, win_h = 30; // Default window dimensions
+int server_fd, client_fd, network_fd = -1;
+int win_w = 155, win_h = 30;
 
 int main(){
     unlink("log/watchdog.log");
@@ -117,15 +133,21 @@ int main(){
     
     LOG("Initialization, mode");
 
-    // Network Setup
-    //Socket variables
+    /* ========================================================================
+     * NETWORK MODE: Socket Setup and Connection Establishment
+     * ========================================================================
+     * STANDALONE mode: Skip all network setup
+     * ======================================================================== */
     int sockfd, newsockfd, clilen, n;
     struct sockaddr_in serv_addr, cli_addr;
     struct hostent *server;
     char msg_sock[100];
 
-    if(mode == SERVER)       //---------Socket part Server-------
-    {
+    /* ========================================================================
+     * SERVER MODE
+     * ======================================================================== */
+    if(mode == SERVER) {
+        /* SERVER socket initialization */
         sockfd = socket(AF_INET, SOCK_STREAM, 0);
         if (sockfd < 0) 
             LOG("ERROR opening socket");
@@ -138,16 +160,16 @@ int main(){
         listen(sockfd,5);
         clilen = sizeof(cli_addr);
         
-        // Accept the connection
+        /* SERVER: Wait for client connection */
         LOG("[SERVER] Waiting for the client to connect");
         newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
-        if (newsockfd < 0) 
-        {
+        if (newsockfd < 0) {
             LOG("ERROR connecting");
             exit(0);
         }
         LOG("Connected to the client");
         
+        /* SERVER: Initial handshake - send "ok", wait for "ook" */
         char buf[128];
         snprintf(buf, sizeof(buf), "ok");
         if (write(newsockfd, buf, strlen(buf)+1) < 0) LOG("ERROR writing 'ok' to socket");
@@ -163,18 +185,22 @@ int main(){
         }
         network_fd = newsockfd;
     }
-    else if (mode == CLIENT)       //--------------Socket part Client-------------
-    {
+    /* ========================================================================
+     * CLIENT MODE
+     * ======================================================================== */
+    else if (mode == CLIENT) {
+        /* CLIENT socket initialization */
         sockfd = socket(AF_INET, SOCK_STREAM, 0);
         if (sockfd < 0) LOG("ERROR opening socket");
     
+        /* CLIENT: Resolve server hostname */
         server = gethostbyname(HOST_NAME);
-        if (server == NULL) 
-        {
+        if (server == NULL) {
             LOG("ERROR, no such host\n");
             exit(0);
         }
     
+        /* CLIENT: Connect to server */
         memset(&serv_addr, 0, sizeof(serv_addr));
         serv_addr.sin_family = AF_INET;
         memcpy(&serv_addr.sin_addr.s_addr, 
@@ -182,13 +208,13 @@ int main(){
                 server->h_length);
         serv_addr.sin_port = htons(DEFAULT_PORT);
     
-        if (connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) 
-        {
+        if (connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) {
             LOG("ERROR connecting");
             exit(0);
         }
         LOG("Connected to the server");
     
+        /* CLIENT: Initial handshake - wait for "ok", send "ook" */
         char buf[128];
         memset(buf, 0, sizeof(buf));
         if (read_line(sockfd, buf, sizeof(buf)) < 0) LOG("ERROR reading 'ok' from socket");
@@ -223,7 +249,6 @@ int main(){
     }
     LOG("Pipes created");
 
-    // Set parent read ends to non-blocking to allow aggressive draining
     for (int i = 0; i < NUM_PROCESSES; i++) {
         int flags = fcntl(pipe_child_to_parent[i][0], F_GETFL, 0);
         fcntl(pipe_child_to_parent[i][0], F_SETFL, flags | O_NONBLOCK);
@@ -252,19 +277,22 @@ int main(){
                     close(pipe_child_to_parent[i][1]);
                 }
             }
-            //
             execl("./build/Watchdog", "./build/Watchdog", fd_pc[IDX_W], fd_cp[IDX_W], NULL);
             perror("execl watchdog");
             exit(EXIT_FAILURE);
         }
         LOG("Watchdog fork");
     } else {
-        pid_W = 0; // Ensure it's 0 if not forked
+        /* NETWORK: Watchdog not used in network mode */
+        pid_W = 0;
     }
 
     char watchdog_pid[16];
     sprintf(watchdog_pid, "%d", pid_W);
 
+    /* ========================================================================
+     * CLIENT MODE: Window Size Synchronization
+     * ======================================================================== */
     if (mode == CLIENT) {
         LOG("CLIENT: Waiting for window size from server...");
         char buf[128];
@@ -278,7 +306,7 @@ int main(){
             snprintf(slog, sizeof(slog), "CLIENT: Received window size: %dx%d", win_w, win_h);
             LOG(slog);
 
-            // Send acknowledgment
+            /* CLIENT: Send acknowledgment */
             snprintf(buf, sizeof(buf), "sok");
             write(network_fd, buf, strlen(buf)+1);
             LOG("CLIENT: Sent 'sok' acknowledgment");
@@ -310,9 +338,12 @@ int main(){
         _exit(EXIT_FAILURE);
     }
     LOG("Blackboard fork");
+
     
+    /* ========================================================================
+     * CLIENT MODE: Forward window size to Blackboard
+     * ======================================================================== */
     if (mode == CLIENT) {
-        // Forward the initial size received from server to Blackboard
         struct msg mb_size;
         mb_size.src = IDX_M;
         snprintf(mb_size.data, MSG_SIZE, "RESIZE %d %d", win_w, win_h);
@@ -395,7 +426,6 @@ int main(){
     if (mode == STANDALONE) {
         pid_O = fork();
         if (pid_O == 0) {
-            // 
             for (int i = 0; i < NUM_PROCESSES; i++) {
                 if (i != IDX_O) {
                     close(pipe_parent_to_child[i][0]);
@@ -418,7 +448,6 @@ int main(){
     if (mode == STANDALONE) {
         pid_T = fork();
         if (pid_T == 0) {
-            // 
             for (int i = 0; i < NUM_PROCESSES; i++) {
                 if (i != IDX_T) {
                     close(pipe_parent_to_child[i][0]);
@@ -549,13 +578,16 @@ int main(){
             }
         }
     }
+    /* ========================================================================
+     * NETWORK MODE: Main Loop for SERVER/CLIENT
+     * ======================================================================== */
     else if (mode == SERVER || mode == CLIENT){
         if (mode == SERVER)
             LOG("[SERVER] Creating route table");
         else
             LOG("[CLIENT] Creating route table");
 
-        //int IDX_R = IDX_O; //remote
+        /* NETWORK: Close unused process pipes (Obstacles, Targets, Watchdog) */
         for (int i = 0; i < NUM_PROCESSES; i++) {
             if (i == IDX_O || i == IDX_T || i == IDX_W){
                 close(pipe_parent_to_child[i][0]);
@@ -571,34 +603,36 @@ int main(){
             }
         }
 
+        /* NETWORK: Simplified route table (no Obstacles/Targets/Watchdog) */
         route_t route_table[NUM_PROCESSES];
         for (int i = 0; i < NUM_PROCESSES; i++) route_table[i].num = 0;
 
         route_table[IDX_I].dest[route_table[IDX_I].num++] = IDX_B;  // I->BB
         route_table[IDX_B].dest[route_table[IDX_B].num++] = IDX_D;  // BB->D
-        route_table[IDX_B].dest[route_table[IDX_B].num++] = IDX_M;  // BB->M (Locale)
+        route_table[IDX_B].dest[route_table[IDX_B].num++] = IDX_M;  // BB->M (Local)
         route_table[IDX_D].dest[route_table[IDX_D].num++] = IDX_B;  // D->BB
         route_table[IDX_M].dest[route_table[IDX_M].num++] = IDX_B;  // M->BB
 
-        route_table[IDX_B].dest[route_table[IDX_B].num++] = IDX_O; //BB->R
-        route_table[IDX_O].dest[route_table[IDX_O].num++] = IDX_B; //R->BB
+        route_table[IDX_B].dest[route_table[IDX_B].num++] = IDX_O; // BB->Remote (virtual)
+        route_table[IDX_O].dest[route_table[IDX_O].num++] = IDX_B; // Remote->BB (virtual)
         
-        static int size_sent = 0;
-        static int local_drone_x = 0, local_drone_y = 0; 
-        static int server_drone_x = 0, server_drone_y = 0; 
-        static int server_drone_dirty = 0;
+        /* NETWORK: State tracking variables */
+        static int size_sent = 0;                    // SERVER: Window size sent to CLIENT
+        static int local_drone_x = 0, local_drone_y = 0;  // CLIENT: Local drone position
+        static int server_drone_x = 0, server_drone_y = 0; // SERVER: Server drone position
+        static int server_drone_dirty = 0;           // SERVER: Drone position changed flag
         
-        static unsigned long last_drone_ms = 0;
-        static unsigned long last_obst_ms = 0;
+        static unsigned long last_drone_ms = 0;      // Timestamp for drone sync
+        static unsigned long last_obst_ms = 0;       // Timestamp for obstacle request
 
-        // LOOP Network mode
+        /* NETWORK: Main event loop */
         int running = 1;
         while(running){
             fd_set rfds;
             FD_ZERO(&rfds);
             int maxfd = -1;
             
-            //local processes
+            /* NETWORK: Monitor local process pipes */
             for (int i = 0; i<NUM_PROCESSES; i++){
                 int fd = pipe_child_to_parent[i][0];
                 if(fd != -1){
@@ -607,26 +641,27 @@ int main(){
                 }
             }
             
-            //from remote
+            /* NETWORK: Monitor network socket for remote messages */
             if (network_fd > 0){
                 FD_SET(network_fd, &rfds);
                 if (network_fd > maxfd) maxfd = network_fd;
             }
 
-            //select
+            /* Wait for activity on pipes or network socket */
             int ret = select(maxfd +1, &rfds, NULL, NULL, NULL);
             if (ret < 0) {
                 perror("select server");
                 break;
             }
 
-            // --- CLIENT Network Protocol ---
+            /* ====================================================================
+             * NETWORK PROTOCOL: CLIENT Message Handling
+             * ==================================================================== */
             if (mode == CLIENT && network_fd > 0 && FD_ISSET(network_fd, &rfds)) {
                 char sbuf[128];
                 memset(sbuf, 0, sizeof(sbuf));
-                // read message from socket communication
                 if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
-                    // EXIT handling
+                    /* NETWORK: Handle exit command */
                     if (strncmp(sbuf, "q", 1) == 0) {
                         LOG("CLIENT: Received exit command 'q'");
                         snprintf(sbuf, sizeof(sbuf), "qok");
@@ -635,24 +670,25 @@ int main(){
                         clean_children();
                         running = 0;
                     }
+                    /* NETWORK: Receive SERVER drone position */
                     else if (strncmp(sbuf, "drone", 5) == 0) {
-                        // Server drone position update
                         memset(sbuf, 0, sizeof(sbuf));
                         if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
                             int dx, dy;
                             if (sscanf(sbuf, "%d, %d", &dx, &dy) == 2) {
-                                // Send dok
+                                /* NETWORK: Acknowledge receipt */
                                 snprintf(sbuf, sizeof(sbuf), "dok");
                                 write(network_fd, sbuf, strlen(sbuf) + 1);
                                 LOG("NETWORK (CLIENT): Received 'dok' from server");
-                                // Forward to local Blackboard as REMOTE
+                                /* NETWORK: Forward to Blackboard as remote obstacle */
                                 struct msg m_remote;
-                                m_remote.src = IDX_O; // Act as remote source
+                                m_remote.src = IDX_O;
                                 snprintf(m_remote.data, MSG_SIZE, "REMOTE %d, %d", dx, dy);
                                 write(pipe_parent_to_child[IDX_B][1], &m_remote, sizeof(m_remote));
                             }
                         }
                     }
+                    /* NETWORK: Send CLIENT drone position to SERVER */
                     else if (strncmp(sbuf, "obst", 4) == 0) {
                         LOG("NETWORK (CLIENT): Received 'obst' request from server");
                         // Server asking for Client's drone position (obst)
@@ -660,7 +696,7 @@ int main(){
                         write(network_fd, sbuf, strlen(sbuf) + 1);
                         LOG("NETWORK (CLIENT): Sent local drone position to server");
                         
-                        // Wait for pok
+                        /* NETWORK: Wait for acknowledgment */
                         memset(sbuf, 0, sizeof(sbuf));
                         if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
                             if (strncmp(sbuf, "pok", 3) == 0) {
@@ -671,33 +707,35 @@ int main(){
                 }
             }
             
-            // --- Time-based Network Synchronization (SERVER) ---
+            /* ====================================================================
+             * NETWORK PROTOCOL: SERVER Time-Based Synchronization
+             * ==================================================================== */
             struct timeval tv;
             gettimeofday(&tv, NULL);
             unsigned long current_ms = tv.tv_sec * 1000 + tv.tv_usec / 1000;
 
             if (mode == SERVER && size_sent && network_fd > 0) {
-                // Throttled Obstacle Request (5Hz)
+                /* NETWORK: Obstacle request (20Hz) */
                 if (current_ms - last_obst_ms >= OBST_SYNC_MS) {
                     char remote_msg[100] = "obst";
                     write(network_fd, &remote_msg, strlen(remote_msg)+1);
                     LOG("NETWORK (SERVER): Sent 'obst' request to client");
-                // Wait for obst position
+                    
+                    /* NETWORK: Receive CLIENT drone position */
                     char sbuf[128];
                     memset(sbuf, 0, sizeof(sbuf));
                     if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
-                        //LOG("NETWORK (SERVER): Received obstacle position from client");
                         int ox, oy;
                         if (sscanf(sbuf, "%d, %d", &ox, &oy) == 2) {
-                        LOG("NETWORK (SERVER): Valid obstacle position received");
-                        
-                        // Forward to Blackboard
+                            LOG("NETWORK (SERVER): Valid obstacle position received");
+                            
+                            /* NETWORK: Forward to Blackboard as obstacle */
                             struct msg m_obst;
                             m_obst.src = IDX_O;
                             snprintf(m_obst.data, MSG_SIZE, "O=%d,%d", ox, oy);
                             write(pipe_parent_to_child[IDX_B][1], &m_obst, sizeof(m_obst));
-                        
-                        // Send pok
+                            
+                            /* NETWORK: Send acknowledgment */
                             snprintf(remote_msg, sizeof(remote_msg), "pok");
                             write(network_fd, &remote_msg, strlen(remote_msg)+1);
                             LOG("NETWORK (SERVER): Sent 'pok' to client");
@@ -706,17 +744,18 @@ int main(){
                     last_obst_ms = current_ms;
                 }
 
-                // Throttled Drone Sync (10Hz)
+                /* NETWORK: Drone sync (10Hz) */
                 if (server_drone_dirty && (current_ms - last_drone_ms >= DRONE_SYNC_MS)) {
                     char remote_msg[100] = "drone";
                     write(network_fd, &remote_msg, strlen(remote_msg)+1);
                     LOG("NETWORK (SERVER): Sent 'drone' command to client");
                     
+                    /* NETWORK: Send SERVER drone position */
                     snprintf(remote_msg, sizeof(remote_msg), "%d, %d", server_drone_x, server_drone_y);
                     write(network_fd, &remote_msg, strlen(remote_msg)+1);
                     LOG("NETWORK (SERVER): Sent server drone position to client");
                     
-                    // Wait for dok
+                    /* NETWORK: Wait for acknowledgment */
                     char sbuf[128];
                     memset(sbuf, 0, sizeof(sbuf));
                     if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
@@ -729,23 +768,26 @@ int main(){
                 }
             }
 
+            /* ====================================================================
+             * NETWORK MODE: Local Process Message Routing
+             * ==================================================================== */
             for (int src = 0; src < NUM_PROCESSES; src++) {
                 int read_fd = pipe_child_to_parent[src][0];
 
                 if (read_fd != -1 && FD_ISSET(read_fd, &rfds)) {
                     struct msg m;
-                    // Drain the pipe loop to recover from network stalls
                     while (1) {
                         ssize_t n = read(read_fd, &m, sizeof(m));
                         if (n <= 0) {
                             if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) break; 
-                            // EOF or error
                             close(read_fd);
                             pipe_child_to_parent[src][0] = -1;
                             break;
                         }
 
-                        // Handshake: size -> sok (Server side)
+                        /* ================================================================
+                         * NETWORK: Window Size Handshake (SERVER only)
+                         * ================================================================ */
                         if (mode == SERVER && !size_sent && m.src == IDX_M && strncmp(m.data, "RESIZE", 6) == 0) {
                             int w, h;
                             sscanf(m.data, "RESIZE %d %d", &w, &h);
@@ -755,7 +797,7 @@ int main(){
                             LOG("SERVER: Sending window size to client...");
                             write(network_fd, sbuf, strlen(sbuf)+1);
 
-                            // Wait for sok
+                            /* NETWORK: Wait for acknowledgment */
                             memset(sbuf, 0, sizeof(sbuf));
                             if (read_line(network_fd, sbuf, sizeof(sbuf)) > 0) {
                                 if (strncmp(sbuf, "sok", 3) == 0) {
@@ -765,7 +807,9 @@ int main(){
                             }
                         }
 
-                        // Intercept ESC key for server shutdown
+                        /* ================================================================
+                         * NETWORK: ESC Key Shutdown Protocol
+                         * ================================================================ */
                         if (src == IDX_I && m.data[0] == 27) {
                             if (mode == SERVER && network_fd > 0) {
                                 LOG("SERVER: Initiating shutdown protocol with client...");
@@ -774,7 +818,6 @@ int main(){
                                 
                                 char qbuf[128];
                                 memset(qbuf, 0, sizeof(qbuf));
-                                // Wait for client to receive and confirm (qok)
                                 if (read_line(network_fd, qbuf, sizeof(qbuf)) > 0) {
                                     if (strncmp(qbuf, "qok", 3) == 0) {
                                         LOG("SERVER: Received 'qok', shutting down.");
@@ -784,27 +827,29 @@ int main(){
                             LOG("MAIN: ESC detected, cleaning up...");
                             clean_children();
                             running = 0;
-                            break; // Exit draining loop
+                            break;
                         }
 
-                        // Targeted Routing for Blackboard (IDX_B)
+                        /* ================================================================
+                         * NETWORK: Message Routing with Network
+                         * ================================================================ */
                         for (int d = 0; d < route_table[src].num; d++) {
                             int dst = route_table[src].dest[d];
 
                             // Efficiency: Skip unnecessary processes
                             if (src == IDX_B) {
-                                if (strncmp(m.data, "D=", 2) == 0 && dst == IDX_D) continue; // Drone doesn't need its own pos
-                                if (strncmp(m.data, "STATS", 5) == 0 && dst == IDX_D) continue; // Drone doesn't need stats
+                                if (strncmp(m.data, "D=", 2) == 0 && dst == IDX_D) continue;
+                                if (strncmp(m.data, "STATS", 5) == 0 && dst == IDX_D) continue;
                             }
 
-                            // Track server drone position to be sent via network at throttled frequency
+                            /* NETWORK: Track SERVER drone position for synchronization */
                             if (mode == SERVER && src == IDX_B && strncmp(m.data, "D=", 2) == 0) {
                                 if (sscanf(m.data, "D=%d,%d", &server_drone_x, &server_drone_y) == 2) {
                                     server_drone_dirty = 1;
                                 }
                             }
                             
-                            // Track local drone position on Client for 'obst' requests
+                            /* NETWORK: Track CLIENT drone position for obstacle requests */
                             if (mode == CLIENT && src == IDX_B && strncmp(m.data, "D=", 2) == 0) {
                                 sscanf(m.data, "D=%d,%d", &local_drone_x, &local_drone_y);
                             }

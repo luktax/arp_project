@@ -72,15 +72,11 @@ int main(int argc, char *argv[]) {
     // Watchdog PID to send alive signals
     pid_t watchdog_pid = atoi(argv[3]);
     
-    // Mode (0=STANDALONE, 1=SERVER, 2=CLIENT)
-    int mode = (argc >= 5) ? atoi(argv[4]) : 0;
-    /*
-    {
-        char blog[128];
-        snprintf(blog, sizeof(blog), "DEBUG: Blackboard started, fd_in=%d, fd_out=%d, mode=%d", fd_in, fd_out, mode);
-        LOG(blog);
-    }
-    */
+    /* ========================================================================
+     * NETWORK MODE: Operating mode parameter (0=STANDALONE, 1=SERVER, 2=CLIENT)
+     * ======================================================================== */
+    int mode = (argc >= 5) ? atoi(argv[4]) : STANDALONE;
+    
     struct blackboard bb = {0, 0, {0}, {0}, 0, {0}, {0}, 0, 155, 30, 1};
     int expected_obs = (int)roundf(bb.H*bb.W/1000);
     int expected_tgs = (int)roundf(bb.H*bb.W/1000);
@@ -105,14 +101,6 @@ int main(int argc, char *argv[]) {
             // Read incoming message
             struct msg m;
             ssize_t n = read(fd_in, &m, sizeof(m));
-            
-            /*
-            if (mode != 0 && n > 0) {  // Debug log in server/client mode
-                char log_buf[80];
-                snprintf(log_buf, sizeof(log_buf), "DEBUG: BB read %ld bytes, src=%d, byte0=%d", n, m.src, (int)m.data[0]);
-                LOG(log_buf);
-            }
-            */
 
             // Message from Keyboard (I)
             if (m.src == IDX_I) {
@@ -151,9 +139,9 @@ int main(int argc, char *argv[]) {
                         perror("write to map forwarding stats");
                     }
                 } else {
-                    // Assume it's a position update
+                    // It's a position update
                     sscanf(m.data, "%d,%d", &bb.drone_x, &bb.drone_y);
-                    /* Silence high-frequency log
+                    /* 
                     {
                         char log_msg[64];
                         snprintf(log_msg, sizeof(log_msg), "Received drone position: %d,%d", bb.drone_x, bb.drone_y);
@@ -197,9 +185,11 @@ int main(int argc, char *argv[]) {
                     perror("write to obstacles and targets via router");
                 }  
             }
-            //from the obstacles / remote drone
+            /* ====================================================================
+             * NETWORK MODE: Obstacle Message Handling
+             * ==================================================================== */
             else if(m.src == IDX_O){ 
-                // Client mode: receiving server's drone position as REMOTE
+                /* NETWORK: CLIENT receives SERVER drone as REMOTE obstacle */
                 if (mode == CLIENT && strncmp(m.data, "REMOTE", 6) == 0) {
                     int rx, ry;
                     if (sscanf(m.data, "REMOTE %d, %d", &rx, &ry) == 2) {
@@ -214,15 +204,18 @@ int main(int argc, char *argv[]) {
                     }
                     continue;
                 }
+                
+                /* NETWORK: SERVER receives CLIENT drone as single obstacle */
                 if (mode == SERVER && strncmp(m.data, "O=", 2) == 0) {
                     struct msg map_msg = m;
                     map_msg.src = IDX_B;
                     write(fd_out, &map_msg, sizeof(map_msg));
-                    // LOG("SERVER: Forwarded single obstacle to Map");
                     sscanf(m.data, "O=%d,%d", &bb.obs_x[0], &bb.obs_y[0]);
                     bb.num_obs=1;
                     continue;
                 }
+                
+                /* STANDALONE: Normal obstacle processing */
                 if (strncmp(m.data, "RESET", 5) == 0){ 
                     
                     tmp_num_obs = 0;
@@ -395,7 +388,7 @@ int main(int argc, char *argv[]) {
             }
 
             // ---------------------------------------------------------------------------------------------------
-            // Logic to check the distance between drone and the first target: correction of "impossible grab goal"
+            // Logic to check the distance between drone and the first target
             // ---------------------------------------------------------------------------------------------------
 
             // Check distance between drone and the current target
@@ -422,14 +415,21 @@ int main(int argc, char *argv[]) {
                 }
             }
         }
-        // Send alive signal to watchdog
+        /* ========================================================================
+         * NETWORK MODE: Timing Adjustment
+         * ========================================================================
+         * Different sleep duration based on mode:
+         *   - STANDALONE: 50ms (20Hz) - matches Watchdog and other processes
+         *   - SERVER/CLIENT: 10ms (100Hz) - faster to handle network messages
+         * ======================================================================== */
         union sigval val;
         val.sival_int = time(NULL);
-        
-        //printf("[BB] signals: IM ALIVE\n");
         if (watchdog_pid > 0) sigqueue(watchdog_pid, SIGUSR1, val);
-        if (mode != 0) usleep(10000);
-        else usleep(50000); 
+        
+        if (mode != STANDALONE)
+            usleep(10000);  // 100Hz in network mode for faster message handling
+        else
+            usleep(50000);  // 20Hz in standalone mode 
     }
     
     close(fd_in);
