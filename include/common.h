@@ -8,11 +8,14 @@
 #define MSG_SIZE 64
 
 // Default port for network communication
-#define DEFAULT_PORT 8080
-#define HOST_NAME "localhost"
-//#define HOST_NAME "130.251.107.95" // MICHELE 
+#define DEFAULT_PORT 5001
+//#define HOST_NAME "localhost"
+//#define HOST_NAME "10.40.116.124" // MICHELE 
 //#define HOST_NAME "172.30.228.47" // PC TAX
-//#define HOST_NAME "192.168.1.240" 
+#define HOST_NAME "10.40.116.135" // CHIARA
+//#define HOST_NAME "192.168.1.240"
+//#define HOST_NAME "10.40.116.44" // GREG
+#define HOST_NAME "192.168.56.131" // Mahdi
 
 // Process indices
 enum {

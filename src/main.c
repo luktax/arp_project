@@ -745,7 +745,8 @@ int main(){
                 }
 
                 /* NETWORK: Drone sync (10Hz) */
-                if (server_drone_dirty && (current_ms - last_drone_ms >= DRONE_SYNC_MS)) {
+                //if (server_drone_dirty && (current_ms - last_drone_ms >= DRONE_SYNC_MS)) {
+                if ((current_ms - last_drone_ms >= DRONE_SYNC_MS)) {
                     char remote_msg[100] = "drone";
                     write(network_fd, &remote_msg, strlen(remote_msg)+1);
                     LOG("NETWORK (SERVER): Sent 'drone' command to client");
@@ -845,7 +846,7 @@ int main(){
                             /* NETWORK: Track SERVER drone position for synchronization */
                             if (mode == SERVER && src == IDX_B && strncmp(m.data, "D=", 2) == 0) {
                                 if (sscanf(m.data, "D=%d,%d", &server_drone_x, &server_drone_y) == 2) {
-                                    server_drone_dirty = 1;
+                                    //server_drone_dirty = 1;
                                 }
                             }
                             
